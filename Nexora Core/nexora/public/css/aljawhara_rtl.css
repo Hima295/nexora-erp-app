@@ -1,0 +1,8 @@
+/* nexora Arabic (RTL) Custom Desk Styling */
+html[dir="rtl"].nexora-rtl {
+    font-family: "Cairo", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+html[dir="rtl"] .form-grid {
+    text-align: right;
+}

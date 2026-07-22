@@ -1,0 +1,19 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.sh
+include *.txt
+recursive-include nexora *.css
+recursive-include nexora *.csv
+recursive-include nexora *.html
+recursive-include nexora *.ico
+recursive-include nexora *.js
+recursive-include nexora *.json
+recursive-include nexora *.md
+recursive-include nexora *.png
+recursive-include nexora *.py
+recursive-include nexora *.svg
+recursive-include nexora *.txt
+recursive-exclude nexora *.pyc
