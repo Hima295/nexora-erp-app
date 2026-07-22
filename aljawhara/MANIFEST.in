@@ -1,0 +1,19 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.sh
+include *.txt
+recursive-include aljawhara *.css
+recursive-include aljawhara *.csv
+recursive-include aljawhara *.html
+recursive-include aljawhara *.ico
+recursive-include aljawhara *.js
+recursive-include aljawhara *.json
+recursive-include aljawhara *.md
+recursive-include aljawhara *.png
+recursive-include aljawhara *.py
+recursive-include aljawhara *.svg
+recursive-include aljawhara *.txt
+recursive-exclude aljawhara *.pyc

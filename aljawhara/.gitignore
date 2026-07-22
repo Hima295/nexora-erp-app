@@ -1,0 +1,11 @@
+*.pyc
+*.egg-info
+.DS_Store
+__pycache__
+node_modules
+*.swp
+*.tar.gz
+dist
+build
+.bench
+aljawhara/public/dist/

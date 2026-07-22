@@ -1,0 +1,6 @@
+{
+  "name": "Aljawhara",
+  "description": "Enterprise-grade custom Frappe application extension for ERPNext v15+",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

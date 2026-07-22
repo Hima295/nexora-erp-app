@@ -1,0 +1,2 @@
+[execute]
+aljawhara.patches.v1_0.initialize_aljawhara_settings

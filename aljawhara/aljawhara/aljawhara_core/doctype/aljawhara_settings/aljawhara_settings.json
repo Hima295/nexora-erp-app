@@ -1,0 +1,165 @@
+{
+  "actions": [],
+  "creation": "2026-07-22 10:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "general_section",
+    "enabled",
+    "primary_language",
+    "column_break_1",
+    "app_title_override",
+    "log_retention_days",
+    "erpnext_integration_section",
+    "observe_sales_orders",
+    "observe_purchase_orders",
+    "observe_stock_entries",
+    "column_break_2",
+    "auto_sync_interval_mins",
+    "enable_audit_logging",
+    "analytics_modules_section",
+    "enable_executive_analytics",
+    "enable_inventory_intelligence",
+    "enable_sales_intelligence",
+    "column_break_3",
+    "enable_purchasing_intelligence",
+    "enable_ai_assistant"
+  ],
+  "fields": [
+    {
+      "fieldname": "general_section",
+      "fieldtype": "Section Break",
+      "label": "General Configuration"
+    },
+    {
+      "default": "1",
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "label": "Enable Aljawhara Extension"
+    },
+    {
+      "default": "Arabic (RTL)",
+      "fieldname": "primary_language",
+      "fieldtype": "Select",
+      "label": "Default UI Interface Direction",
+      "options": "Arabic (RTL)\nEnglish (LTR)"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "Aljawhara الجوهرة",
+      "fieldname": "app_title_override",
+      "fieldtype": "Data",
+      "label": "Custom Desk Title"
+    },
+    {
+      "default": "90",
+      "fieldname": "log_retention_days",
+      "fieldtype": "Int",
+      "label": "Log Retention Period (Days)"
+    },
+    {
+      "fieldname": "erpnext_integration_section",
+      "fieldtype": "Section Break",
+      "label": "ERPNext Core Observers"
+    },
+    {
+      "default": "1",
+      "fieldname": "observe_sales_orders",
+      "fieldtype": "Check",
+      "label": "Observe Sales Orders"
+    },
+    {
+      "default": "1",
+      "fieldname": "observe_purchase_orders",
+      "fieldtype": "Check",
+      "label": "Observe Purchase Orders"
+    },
+    {
+      "default": "1",
+      "fieldname": "observe_stock_entries",
+      "fieldtype": "Check",
+      "label": "Observe Stock Entries"
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "60",
+      "fieldname": "auto_sync_interval_mins",
+      "fieldtype": "Int",
+      "label": "Background Sync Interval (Minutes)"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_audit_logging",
+      "fieldtype": "Check",
+      "label": "Enable Detailed Audit Logging"
+    },
+    {
+      "fieldname": "analytics_modules_section",
+      "fieldtype": "Section Break",
+      "label": "Upcoming Analytics & AI Roadmap Switches"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_executive_analytics",
+      "fieldtype": "Check",
+      "label": "Enable Executive Analytics"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_inventory_intelligence",
+      "fieldtype": "Check",
+      "label": "Enable Inventory Intelligence"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_sales_intelligence",
+      "fieldtype": "Check",
+      "label": "Enable Sales Intelligence"
+    },
+    {
+      "fieldname": "column_break_3",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_purchasing_intelligence",
+      "fieldtype": "Check",
+      "label": "Enable Purchasing Intelligence"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_ai_assistant",
+      "fieldtype": "Check",
+      "label": "Enable AI Assistant Framework"
+    }
+  ],
+  "issingle": 1,
+  "links": [],
+  "modified": "2026-07-22 10:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Aljawhara Core",
+  "name": "Aljawhara Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

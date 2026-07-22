@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - REDIS_CACHE=redis://redis-cache:6379
+      - REDIS_QUEUE=redis://redis-queue:6379
+    volumes:
+      - sites-vol:/home/frappe/frappe-bench/sites
+      - assets-vol:/home/frappe/frappe-bench/sites/assets
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mariadb
+      - redis-cache
+      - redis-queue
+
+  mariadb:
+    image: mariadb:10.6
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=aljawhara_root
+    volumes:
+      - db-vol:/var/lib/mysql
+
+  redis-cache:
+    image: redis:7-alpine
+    restart: always
+
+  redis-queue:
+    image: redis:7-alpine
+    restart: always
+
+volumes:
+  db-vol:
+  sites-vol:
+  assets-vol:
