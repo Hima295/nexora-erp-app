@@ -25,7 +25,7 @@ services:
     image: mariadb:10.6
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=aljawhara_root
+      - MYSQL_ROOT_PASSWORD=nexora_root
     volumes:
       - db-vol:/var/lib/mysql
 

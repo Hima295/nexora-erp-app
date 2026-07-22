@@ -1,2 +1,2 @@
-# Aljawhara Frappe Application Dependencies
+# nexora Frappe Application Dependencies
 # ERPNext v15+ compatibility layer

@@ -3,9 +3,9 @@ requires = ["flit_core >=3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "aljawhara"
+name = "nexora"
 authors = [
-    { name = "Aljawhara Engineering Team", email = "dev@aljawhara.internal" }
+    { name = "nexora Engineering Team", email = "dev@nexora.internal" }
 ]
 description = "Enterprise-grade custom Frappe application extending ERPNext v15+"
 readme = "README.md"
@@ -15,5 +15,5 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aljawhara-org/aljawhara"
-Repository = "https://github.com/aljawhara-org/aljawhara.git"
+Homepage = "https://github.com/nexora-org/nexora"
+Repository = "https://github.com/nexora-org/nexora.git"

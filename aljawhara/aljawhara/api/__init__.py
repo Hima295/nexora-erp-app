@@ -1,1 +1,0 @@
-# Aljawhara API package

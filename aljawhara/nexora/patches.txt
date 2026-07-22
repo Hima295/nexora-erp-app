@@ -1,0 +1,2 @@
+[execute]
+nexora.patches.v1_0.initialize_nexora_settings

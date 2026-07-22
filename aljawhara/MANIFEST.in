@@ -5,15 +5,15 @@ include *.md
 include *.py
 include *.sh
 include *.txt
-recursive-include aljawhara *.css
-recursive-include aljawhara *.csv
-recursive-include aljawhara *.html
-recursive-include aljawhara *.ico
-recursive-include aljawhara *.js
-recursive-include aljawhara *.json
-recursive-include aljawhara *.md
-recursive-include aljawhara *.png
-recursive-include aljawhara *.py
-recursive-include aljawhara *.svg
-recursive-include aljawhara *.txt
-recursive-exclude aljawhara *.pyc
+recursive-include nexora *.css
+recursive-include nexora *.csv
+recursive-include nexora *.html
+recursive-include nexora *.ico
+recursive-include nexora *.js
+recursive-include nexora *.json
+recursive-include nexora *.md
+recursive-include nexora *.png
+recursive-include nexora *.py
+recursive-include nexora *.svg
+recursive-include nexora *.txt
+recursive-exclude nexora *.pyc

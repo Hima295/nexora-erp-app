@@ -1,1 +1,0 @@
-# Aljawhara Settings DocType Init

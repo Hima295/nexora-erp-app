@@ -1,1 +1,0 @@
-# Aljawhara Log DocType Init
