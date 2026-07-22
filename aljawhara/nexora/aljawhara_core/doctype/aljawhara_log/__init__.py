@@ -1,1 +1,0 @@
-# nexora Log DocType Init
