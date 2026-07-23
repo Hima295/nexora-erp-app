@@ -1,10 +1,12 @@
 [
-  {
-    "doc_type": "Sales Order",
-    "doctype_or_field": "DocType",
-    "module": "nexora Core",
-    "property": "track_changes",
-    "property_type": "Check",
-    "value": "1"
-  }
+ {
+  "doc_type": "Sales Order",
+  "doctype_or_field": "DocType",
+  "module": "nexora Core",
+  "property": "track_changes",
+  "property_type": "Check",
+  "value": "1",
+  "doctype": "Property Setter",
+  "name": "Sales Order-track_changes-nexora Core"
+ }
 ]

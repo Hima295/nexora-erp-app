@@ -1,6 +1,1 @@
 nexora Core
-Executive Analytics
-Inventory Intelligence
-Sales Intelligence
-Purchasing Intelligence
-AI Decision Support
