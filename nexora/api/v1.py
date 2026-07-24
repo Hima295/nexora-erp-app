@@ -38,3 +38,14 @@ def boot_session(bootinfo):
         }
     except Exception:
         pass
+
+
+@frappe.whitelist()
+def get_system_connection():
+    """Returns ERPNext system connection summary for Nexora Pulse workspace card"""
+    try:
+        from nexora.services.analytics_service import get_system_connection_status
+        return get_system_connection_status()
+    except Exception as e:
+        frappe.log_error(f"Error fetching system connection: {str(e)}", "nexora API Error")
+        return {"status": "Error", "error": str(e)}
