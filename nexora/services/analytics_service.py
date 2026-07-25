@@ -18,7 +18,6 @@ def get_system_connection_status():
         "status": "Connected" if erpnext_installed else "Disconnected",
         "erpnext_installed": erpnext_installed,
         "active_company": company_context.get("company"),
-        "active_branch": company_context.get("branch"),
         "warehouses_count": inventory.get("warehouses", 0),
         "items_count": inventory.get("items", 0),
         "suppliers_count": get_supplier_count(),

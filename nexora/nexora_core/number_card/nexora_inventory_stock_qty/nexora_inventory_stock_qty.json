@@ -1,0 +1,18 @@
+{
+ "creation": "2026-07-24 14:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "idx": 3,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Total Stock Quantity",
+ "method": "nexora.api.v1.get_number_card_stock_qty",
+ "modified": "2026-07-24 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nexora Core",
+ "name": "Total Stock Quantity",
+ "owner": "Administrator",
+ "show_percentage_stats": 0,
+ "stats_time_interval": "Daily",
+ "type": "Custom"
+}

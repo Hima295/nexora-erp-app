@@ -1,4 +1,7 @@
 [pre_model_sync]
+
 [post_model_sync]
+nexora.patches.v1_2_2.add_inventory_custom_block
+
 [execute]
 nexora.patches.v1_0.initialize_nexora_settings

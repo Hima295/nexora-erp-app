@@ -1,29 +1,128 @@
 {
- "charts": [],
- "content": "[{\"id\":\"dE9Q-9V3Ks\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h2\\\"><b>Nexora Pulse</b></span>\",\"col\":12}},{\"id\":\"A4bR-2L1Mn\",\"type\":\"paragraph\",\"data\":{\"text\":\"Official landing page for the Nexora ERP extension on ERPNext v15.\",\"col\":12}},{\"id\":\"xYz1-AbC2\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"pQw3-EfR4\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>System Connection</b></span>\",\"col\":12}},{\"id\":\"sYc5-HhJ7\",\"type\":\"paragraph\",\"data\":{\"text\":\"ERPNext Connection Status, Active Company, Warehouses Count, Items Count, Suppliers Count, Last Synchronization Time — loaded via nexora.api.v1.get_system_connection.\",\"col\":12}},{\"id\":\"mAa9-BbC3\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"bVv7-KlL8\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Executive KPIs</b></span>\",\"col\":12}},{\"id\":\"zZx9-QwE1\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"rTy2-UiI3\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Inventory Hub</b></span>\",\"col\":12}},{\"id\":\"oOp4-AaS5\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"uUy8-JjK2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Purchasing Hub</b></span>\",\"col\":12}},{\"id\":\"hHg3-DdF6\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"lLk6-FfD7\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Supplier Hub</b></span>\",\"col\":12}},{\"id\":\"jHh8-GgG9\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"fFf1-DdS2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Pricing Hub</b></span>\",\"col\":12}},{\"id\":\"dDs3-SsA4\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"aAa5-ZzX6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Reports Hub</b></span>\",\"col\":12}},{\"id\":\"qQw7-WwE8\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"eEr9-RrT1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>AI Hub</b></span>\",\"col\":12}},{\"id\":\"tTy2-YyU3\",\"type\":\"spacer\",\"data\":{\"col\":12}}]",
- "creation": "2026-07-24 02:00:00.000000",
- "custom_blocks": [],
- "docstatus": 0,
- "doctype": "Workspace",
- "for_user": "",
- "hide_custom": 0,
- "icon": "tachometer",
- "idx": 0,
- "is_hidden": 0,
- "label": "Nexora Pulse",
- "links": [],
- "modified": "2026-07-24 02:00:00.000000",
- "modified_by": "Administrator",
- "module": "Nexora Core",
- "name": "Nexora Pulse",
- "number_cards": [],
- "owner": "Administrator",
- "parent_page": "",
- "public": 1,
- "quick_lists": [],
- "restrict_to_domain": "",
- "roles": [],
- "sequence_id": 1.0,
- "shortcuts": [],
- "title": "Nexora Pulse"
+  "charts": [],
+  "content": "[{\"id\": \"np-h-1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h2\\\"><b>Nexora Pulse</b></span>\", \"col\": 12}}, {\"id\": \"np-p-1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Official landing page for the Nexora ERP extension on ERPNext v15.\", \"col\": 12}}, {\"id\": \"np-sp-1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>System Connection</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Executive KPIs</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-3\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-sc-1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Item\", \"col\": 3}}, {\"id\": \"np-sc-2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Warehouse\", \"col\": 3}}, {\"id\": \"np-sc-3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Stock Entry\", \"col\": 3}}, {\"id\": \"np-sc-4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Material Request\", \"col\": 3}}, {\"id\": \"np-sc-5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Supplier\", \"col\": 3}}, {\"id\": \"np-sc-6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Order\", \"col\": 3}}, {\"id\": \"np-sc-7\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Sales Order\", \"col\": 3}}, {\"id\": \"np-sc-8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Receipt\", \"col\": 3}}, {\"id\": \"np-sc-9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Delivery Note\", \"col\": 3}}, {\"id\": \"np-sc-10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer\", \"col\": 3}}, {\"id\": \"np-sp-4\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-4\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inventory</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-5\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-nc-1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total Items\", \"col\": 3}}, {\"id\": \"np-nc-2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total Warehouses\", \"col\": 3}}, {\"id\": \"np-nc-3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total Stock Quantity\", \"col\": 3}}, {\"id\": \"np-nc-4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total Inventory Value\", \"col\": 3}}, {\"id\": \"np-sp-6\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-5\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Purchasing</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-7\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-cb-1\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"Nexora Inventory\", \"col\": 12}}, {\"id\": \"np-sp-8\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-6\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Supplier</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-9\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Pricing</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-10\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"np-h-8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports</b></span>\", \"col\": 12}}, {\"id\": \"np-sp-11\", \"type\": \"spacer\", \"data\": {\"col\": 12}}]",
+  "creation": "2026-07-24 02:00:00.000000",
+  "custom_blocks": [
+    {
+      "custom_block_name": "Nexora Inventory",
+      "label": "Inventory"
+    }
+  ],
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "tachometer",
+  "idx": 0,
+  "is_hidden": 0,
+  "label": "Nexora Pulse",
+  "links": [],
+  "modified": "2026-07-24 02:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Nexora Core",
+  "name": "Nexora Pulse",
+  "number_cards": [
+    {
+      "number_card_name": "Total Items"
+    },
+    {
+      "number_card_name": "Total Warehouses"
+    },
+    {
+      "number_card_name": "Total Stock Quantity"
+    },
+    {
+      "number_card_name": "Total Inventory Value"
+    }
+  ],
+  "owner": "Administrator",
+  "parent_page": "",
+  "public": 1,
+  "quick_lists": [],
+  "restrict_to_domain": "",
+  "roles": [],
+  "sequence_id": 1.0,
+  "shortcuts": [
+    {
+      "type": "DocType",
+      "link_to": "Item",
+      "label": "Items",
+      "icon": "fa fa-cube",
+      "color": "#FF6B6B",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Warehouse",
+      "label": "Warehouses",
+      "icon": "fa fa-warehouse",
+      "color": "#4ECDC4",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Stock Entry",
+      "label": "Stock Entry",
+      "icon": "fa fa-arrow-right",
+      "color": "#45B7D1",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Material Request",
+      "label": "Material Request",
+      "icon": "fa fa-shopping-cart",
+      "color": "#96CEB4",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Purchase Receipt",
+      "label": "Purchase Receipt",
+      "icon": "fa fa-check",
+      "color": "#DDA0DD",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Delivery Note",
+      "label": "Delivery Note",
+      "icon": "fa fa-truck",
+      "color": "#98D8C8",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Supplier",
+      "label": "Suppliers",
+      "icon": "fa fa-truck",
+      "color": "#85C1E9",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Purchase Order",
+      "label": "Purchase Orders",
+      "icon": "fa fa-file-text",
+      "color": "#F7DC6F",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Sales Order",
+      "label": "Sales Orders",
+      "icon": "fa fa-file-text",
+      "color": "#BB8FCE",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Customer",
+      "label": "Customers",
+      "icon": "fa fa-user",
+      "color": "#F1948A",
+      "doc_view": "List"
+    }
+  ],
+  "title": "Nexora Pulse"
 }
