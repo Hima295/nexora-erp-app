@@ -1,0 +1,1618 @@
+# -*- coding: utf-8 -*-
+"""
+Nexora Executive Dashboard (v3.0 Phase 1)
+Read-only aggregate layer over live ERPNext data.
+No ERPNext core modifications. Company-isolated, permission-checked.
+"""
+from __future__ import annotations
+
+import frappe
+from frappe import _
+from frappe.utils import add_days, add_months, flt, getdate, nowdate
+
+ALLOWED_ROLES = ("System Manager", "Stock Manager", "Accounts Manager", "Stock User", "Auditor", "Desk User")
+
+DASH_CACHE_TTL = 45  # seconds
+
+
+def _check_permission():
+    if frappe.session.user == "Administrator":
+        return
+    roles = set(frappe.get_roles())
+    if not roles.intersection(ALLOWED_ROLES):
+        frappe.throw(_("Not permitted to view the Executive Dashboard."), frappe.PermissionError)
+
+
+def _resolve_company(company=None):
+    if company:
+        return company
+    default = frappe.defaults.get_user_default("company")
+    if default:
+        return default
+    comps = frappe.get_all("Company", limit=1, order_by="creation", pluck="name")
+    return comps[0] if comps else None
+
+
+def _company_currency(company):
+    return frappe.db.get_value("Company", company, "default_currency") or frappe.get_default("currency") or "SDG"
+
+
+@frappe.whitelist()
+def get_companies():
+    _check_permission()
+    return frappe.get_all(
+        "Company",
+        fields=["name", "default_currency", "abbr"],
+        order_by="creation",
+    )
+
+
+def _safe(fn, default, key):
+    """Run a section, log the error once, return default on failure."""
+    try:
+        return fn()
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), _("Nexora Dashboard - {0}").format(key))
+        return default
+
+
+# ---------------------------------------------------------------------------
+# Sales / Profit
+# ---------------------------------------------------------------------------
+def _sales_stats(company, start, end):
+    row = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+        FROM `tabSales Invoice`
+        WHERE docstatus = 1 AND company = %s AND posting_date BETWEEN %s AND %s
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+    return {"amount": flt(row[0]["amount"], 2), "count": int(row[0]["count"] or 0)}
+
+
+def _profit_stats(company, start, end):
+    row = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(
+            CASE WHEN IFNULL(it.is_stock_item, 1) = 1
+                 THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
+                 ELSE 0 END
+        ), 0) AS profit
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabItem` it ON it.name = sii.item_code
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+    return flt(row[0]["profit"], 2)
+
+
+def _build_sales(company, today, yesterday):
+    month_start = getdate(today).replace(day=1)
+    prev_month_start = getdate(add_months(month_start, -1))
+    prev_month_end = getdate(add_days(month_start, -1))
+
+    today_s = _sales_stats(company, today, today)
+    yesterday_s = _sales_stats(company, yesterday, yesterday)
+    month_s = _sales_stats(company, month_start, today)
+    prev_s = _sales_stats(company, prev_month_start, prev_month_end)
+
+    def pct(cur, prev):
+        if prev:
+            return flt((cur - prev) / abs(prev) * 100, 1)
+        return flt(100, 1) if cur else 0
+
+    profit_today = _profit_stats(company, today, today)
+    profit_yesterday = _profit_stats(company, yesterday, yesterday)
+    profit_month = _profit_stats(company, month_start, today)
+    profit_prev = _profit_stats(company, prev_month_start, prev_month_end)
+
+    trend = _daily_trend(company, add_days(today, -29), today)
+
+    top_items = _top_items(company, add_days(today, -29), today)
+    top_customers = _top_customers(company, add_days(today, -29), today)
+
+    return {
+        "today": {"amount": today_s["amount"], "count": today_s["count"], "profit": profit_today},
+        "yesterday": {"amount": yesterday_s["amount"], "count": yesterday_s["count"], "profit": profit_yesterday},
+        "today_vs_yesterday": {
+            "change_pct": pct(today_s["amount"], yesterday_s["amount"]),
+            "profit_change_pct": pct(profit_today, profit_yesterday),
+        },
+        "month": {
+            "amount": month_s["amount"],
+            "count": month_s["count"],
+            "profit": profit_month,
+            "prev_amount": prev_s["amount"],
+            "prev_profit": profit_prev,
+            "change_pct": pct(month_s["amount"], prev_s["amount"]),
+        },
+        "trend": trend,
+        "top_items": top_items,
+        "top_customers": top_customers,
+    }
+
+
+def _daily_trend(company, start, end):
+    rows = frappe.db.sql(
+        """
+        SELECT si.posting_date AS d,
+               IFNULL(SUM(si.grand_total), 0) AS amount,
+               COUNT(DISTINCT si.name) AS count,
+               IFNULL(SUM(
+                   CASE WHEN IFNULL(it.is_stock_item, 1) = 1
+                        THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
+                        ELSE 0 END
+               ), 0) AS profit
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
+        LEFT JOIN `tabItem` it ON it.name = sii.item_code
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        GROUP BY si.posting_date
+        ORDER BY si.posting_date
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+    by_date = {r["d"]: r for r in rows}
+    out = []
+    cur = getdate(start)
+    end_d = getdate(end)
+    while cur <= end_d:
+        r = by_date.get(cur)
+        out.append({
+            "date": str(cur),
+            "amount": flt(r["amount"], 2) if r else 0,
+            "count": int(r["count"]) if r else 0,
+            "profit": flt(r["profit"], 2) if r else 0,
+        })
+        cur = add_days(cur, 1)
+    return out
+
+
+def _top_items(company, start, end, limit=10):
+    rows = frappe.db.sql(
+        """
+        SELECT sii.item_code, IFNULL(it.item_name, sii.item_name) AS item_name,
+               SUM(IFNULL(sii.qty, 0)) AS qty, SUM(IFNULL(sii.amount, 0)) AS amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabItem` it ON it.name = sii.item_code
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        GROUP BY sii.item_code, it.item_name, sii.item_name
+        ORDER BY amount DESC
+        LIMIT %s
+        """,
+        (company, start, end, limit),
+        as_dict=True,
+    )
+    return [
+        {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2), "amount": flt(r["amount"], 2)}
+        for r in rows
+    ]
+
+
+def _top_customers(company, start, end, limit=10):
+    rows = frappe.db.sql(
+        """
+        SELECT si.customer, IFNULL(c.customer_name, si.customer_name) AS customer_name,
+               COUNT(DISTINCT si.name) AS count, SUM(IFNULL(si.grand_total, 0)) AS amount
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        GROUP BY si.customer, c.customer_name, si.customer_name
+        ORDER BY amount DESC
+        LIMIT %s
+        """,
+        (company, start, end, limit),
+        as_dict=True,
+    )
+    return [
+        {"customer": r["customer"], "customer_name": r["customer_name"], "count": int(r["count"] or 0), "amount": flt(r["amount"], 2)}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Cash / Receivables / Payables
+# ---------------------------------------------------------------------------
+def _cash_position(company):
+    accounts = frappe.db.sql(
+        """
+        SELECT a.name, a.account_type, a.account_currency,
+               IFNULL((SELECT SUM(IFNULL(gle.debit, 0) - IFNULL(gle.credit, 0))
+                       FROM `tabGL Entry` gle WHERE gle.account = a.name AND gle.company = %s
+                         AND gle.docstatus < 2 AND IFNULL(gle.is_cancelled, 0) = 0), 0) AS balance
+        FROM `tabAccount` a
+        WHERE a.company = %s AND a.is_group = 0 AND a.disabled = 0
+          AND a.account_type IN ('Cash', 'Bank')
+        ORDER BY a.account_type, a.name
+        """,
+        (company, company),
+        as_dict=True,
+    )
+    cash = sum(flt(a["balance"]) for a in accounts if a["account_type"] == "Cash")
+    bank = sum(flt(a["balance"]) for a in accounts if a["account_type"] == "Bank")
+
+    recv = frappe.db.sql(
+        "SELECT IFNULL(SUM(outstanding_amount), 0) FROM `tabSales Invoice` WHERE docstatus = 1 AND company = %s",
+        (company,),
+    )[0][0]
+    pay = frappe.db.sql(
+        "SELECT IFNULL(SUM(outstanding_amount), 0) FROM `tabPurchase Invoice` WHERE docstatus = 1 AND company = %s",
+        (company,),
+    )[0][0]
+
+    return {
+        "cash": flt(cash, 2),
+        "bank": flt(bank, 2),
+        "total": flt(cash + bank, 2),
+        "receivables": flt(recv, 2),
+        "payables": flt(pay, 2),
+        "net_position": flt(cash + bank - pay + recv, 2),
+        "accounts": [
+            {"name": a["name"], "account_type": a["account_type"], "balance": flt(a["balance"], 2)}
+            for a in accounts
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Purchasing
+# ---------------------------------------------------------------------------
+def _purchase_performance(company, today):
+    month_start = getdate(today).replace(day=1)
+    prev_month_start = getdate(add_months(month_start, -1))
+    prev_month_end = getdate(add_days(month_start, -1))
+
+    def pi_stats(start, end):
+        row = frappe.db.sql(
+            """
+            SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+            FROM `tabPurchase Invoice`
+            WHERE docstatus = 1 AND company = %s AND posting_date BETWEEN %s AND %s
+            """,
+            (company, start, end),
+            as_dict=True,
+        )
+        return {"amount": flt(row[0]["amount"], 2), "count": int(row[0]["count"] or 0)}
+
+    month = pi_stats(month_start, today)
+    prev = pi_stats(prev_month_start, prev_month_end)
+
+    requests = _purchase_requests(company)
+    top_suppliers = _top_suppliers(company, add_days(today, -29), today)
+    pending_pos = {"count": 0, "amount": 0}
+    if frappe.db.table_exists("Purchase Order"):
+        row = frappe.db.sql(
+            """
+            SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+            FROM `tabPurchase Order`
+            WHERE docstatus = 0 AND company = %s
+            """,
+            (company,),
+            as_dict=True,
+        )
+        pending_pos = {"count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+
+    return {
+        "month": {"amount": month["amount"], "count": month["count"],
+                  "prev_amount": prev["amount"], "change_pct":
+                  flt((month["amount"] - prev["amount"]) / abs(prev["amount"]) * 100, 1) if prev["amount"] else (100 if month["amount"] else 0)},
+        "requests_waiting": requests,
+        "pending_pos": pending_pos,
+        "top_suppliers": top_suppliers,
+    }
+
+
+def _purchase_requests(company):
+    if not frappe.db.table_exists("Purchase Request"):
+        return {"available": False, "count": 0, "amount": 0}
+    row = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(total), 0) AS amount, COUNT(*) AS count
+        FROM `tabPurchase Request`
+        WHERE docstatus = 0 AND company = %s
+        """,
+        (company,),
+        as_dict=True,
+    )
+    return {"available": True, "count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+
+
+def _top_suppliers(company, start, end, limit=10):
+    rows = frappe.db.sql(
+        """
+        SELECT pi.supplier, IFNULL(s.supplier_name, pi.supplier_name) AS supplier_name,
+               COUNT(DISTINCT pi.name) AS count, SUM(IFNULL(pi.grand_total, 0)) AS amount
+        FROM `tabPurchase Invoice` pi
+        LEFT JOIN `tabSupplier` s ON s.name = pi.supplier
+        WHERE pi.docstatus = 1 AND pi.company = %s AND pi.posting_date BETWEEN %s AND %s
+        GROUP BY pi.supplier, s.supplier_name, pi.supplier_name
+        ORDER BY amount DESC
+        LIMIT %s
+        """,
+        (company, start, end, limit),
+        as_dict=True,
+    )
+    return [
+        {"supplier": r["supplier"], "supplier_name": r["supplier_name"], "count": int(r["count"] or 0), "amount": flt(r["amount"], 2)}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
+def _inventory_health(company):
+    bins = frappe.db.sql(
+        """
+        SELECT b.item_code, it.item_name, it.safety_stock, it.valuation_rate,
+               SUM(IFNULL(b.actual_qty, 0)) AS qty
+        FROM `tabBin` b
+        INNER JOIN `tabItem` it ON it.name = b.item_code
+        WHERE it.disabled = 0 AND IFNULL(it.is_stock_item, 1) = 1
+        GROUP BY b.item_code, it.item_name, it.safety_stock, it.valuation_rate
+        """,
+        as_dict=True,
+    )
+
+    reorder = frappe.db.sql(
+        "SELECT parent AS item_code, MIN(IFNULL(warehouse_reorder_level, 0)) AS level "
+        "FROM `tabItem Reorder` GROUP BY parent",
+        as_dict=True,
+    )
+    reorder_map = {r["item_code"]: flt(r["level"]) for r in reorder}
+
+    all_stock_items = frappe.db.sql(
+        "SELECT name, item_name, safety_stock, valuation_rate FROM `tabItem` "
+        "WHERE disabled = 0 AND IFNULL(is_stock_item, 1) = 1",
+        as_dict=True,
+    )
+    bin_map = {r["item_code"]: r for r in bins}
+
+    low_stock = []
+    out_of_stock = []
+    for it in all_stock_items:
+        qty = flt(bin_map.get(it["name"], {}).get("qty", 0))
+        threshold = reorder_map.get(it["name"], flt(it["safety_stock"] or 0))
+        rec = {
+            "item_code": it["name"],
+            "item_name": it["item_name"],
+            "qty": qty,
+            "threshold": threshold,
+            "valuation_rate": flt(it["valuation_rate"], 2),
+        }
+        if qty <= 0:
+            out_of_stock.append(rec)
+        elif threshold > 0 and qty <= threshold:
+            low_stock.append(rec)
+
+    warehouses = frappe.db.sql(
+        """
+        SELECT b.warehouse, COUNT(DISTINCT b.item_code) AS items,
+               SUM(IFNULL(b.actual_qty, 0)) AS qty,
+               SUM(IFNULL(b.actual_qty, 0) * IFNULL(it.valuation_rate, 0)) AS value
+        FROM `tabBin` b
+        INNER JOIN `tabItem` it ON it.name = b.item_code
+        GROUP BY b.warehouse
+        ORDER BY value DESC
+        """,
+        as_dict=True,
+    )
+    total_value = sum(flt(w["value"]) for w in warehouses)
+    total_qty = sum(flt(w["qty"]) for w in warehouses)
+
+    return {
+        "total_value": flt(total_value, 2),
+        "total_qty": flt(total_qty, 2),
+        "item_count": len(all_stock_items),
+        "low_stock": {"count": len(low_stock), "items": low_stock[:10]},
+        "out_of_stock": {"count": len(out_of_stock), "items": out_of_stock[:10]},
+        "warehouses": [
+            {"warehouse": w["warehouse"], "items": int(w["items"] or 0), "qty": flt(w["qty"], 2), "value": flt(w["value"], 2)}
+            for w in warehouses
+        ],
+    }
+
+
+def _fast_slow_moving(company, today):
+    start_90 = add_days(today, -89)
+    sold = frappe.db.sql(
+        """
+        SELECT sii.item_code, SUM(IFNULL(sii.qty, 0)) AS qty, SUM(IFNULL(sii.amount, 0)) AS amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date >= %s
+        GROUP BY sii.item_code
+        """,
+        (company, start_90),
+        as_dict=True,
+    )
+    sold_map = {r["item_code"]: r for r in sold}
+    fast = sorted(sold, key=lambda r: flt(r["qty"]), reverse=True)[:10]
+
+    in_stock = frappe.db.sql(
+        """
+        SELECT b.item_code, it.item_name, IFNULL(it.valuation_rate, 0) AS valuation_rate,
+               SUM(IFNULL(b.actual_qty, 0)) AS qty
+        FROM `tabBin` b
+        INNER JOIN `tabItem` it ON it.name = b.item_code
+        WHERE it.disabled = 0 AND IFNULL(it.is_stock_item, 1) = 1
+        GROUP BY b.item_code, it.item_name, it.valuation_rate
+        HAVING qty > 0
+        """,
+        as_dict=True,
+    )
+    slow = [
+        r for r in in_stock if r["item_code"] not in sold_map
+    ]
+    slow.sort(key=lambda r: flt(r["qty"]) * flt(r["valuation_rate"]), reverse=True)
+
+    return {
+        "fast": [
+            {"item_code": r["item_code"], "qty": flt(r["qty"], 2), "amount": flt(r["amount"], 2)}
+            for r in fast
+        ],
+        "slow": [
+            {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2)}
+            for r in slow[:10]
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Exchange rates / Pricing alerts / Notifications
+# ---------------------------------------------------------------------------
+def _exchange_rates(company):
+    base = _company_currency(company)
+    rows = frappe.db.sql(
+        """
+        SELECT from_currency, to_currency, exchange_rate, date
+        FROM `tabCurrency Exchange`
+        WHERE to_currency = %s
+        ORDER BY date DESC, creation DESC
+        """,
+        (base,),
+        as_dict=True,
+    )
+    majors = ["USD", "EUR", "GBP", "AED", "SAR", "TRY", "CNY"]
+    alerts = []
+    seen = set()
+    for r in rows:
+        if r["from_currency"] in seen:
+            continue
+        seen.add(r["from_currency"])
+        prev = None
+        for r2 in rows:
+            if r2["from_currency"] == r["from_currency"] and getdate(r2["date"]) <= getdate(add_days(r["date"], -6)):
+                prev = r2
+                break
+        rate = flt(r["exchange_rate"])
+        prev_rate = flt(prev["exchange_rate"]) if prev else None
+        change_pct = flt((rate - prev_rate) / prev_rate * 100, 2) if prev_rate else None
+        alerts.append({
+            "from_currency": r["from_currency"],
+            "to_currency": base,
+            "rate": rate,
+            "date": str(r["date"]),
+            "prev_rate": prev_rate,
+            "change_pct": change_pct,
+        })
+    missing = [m for m in majors if m not in seen]
+    return {"base_currency": base, "alerts": alerts, "missing": missing}
+
+
+def _pricing_alerts(company):
+    rows = frappe.db.sql(
+        """
+        SELECT ip.item_code, it.item_name, it.valuation_rate, ip.price_list, ip.price_list_rate
+        FROM `tabItem Price` ip
+        INNER JOIN `tabItem` it ON it.name = ip.item_code
+        INNER JOIN `tabPrice List` pl ON pl.name = ip.price_list
+        WHERE pl.selling = 1 AND it.valuation_rate > 0 AND ip.price_list_rate <= it.valuation_rate
+        ORDER BY it.valuation_rate - ip.price_list_rate DESC
+        LIMIT 25
+        """,
+        as_dict=True,
+    )
+    total_loss = sum(flt(r["valuation_rate"] - r["price_list_rate"]) * 1 for r in rows)
+    return {
+        "count": len(rows),
+        "items": [
+            {"item_code": r["item_code"], "item_name": r["item_name"],
+             "valuation_rate": flt(r["valuation_rate"], 2), "price_list_rate": flt(r["price_list_rate"], 2)}
+            for r in rows
+        ],
+        "impact": flt(total_loss, 2),
+    }
+
+
+def _notifications():
+    if not frappe.db.table_exists("Notification Log"):
+        return {"unread": 0, "recent": []}
+    user = frappe.session.user
+    unread = frappe.db.count("Notification Log", {"for_user": user, "read": 0})
+    recent = frappe.db.sql(
+        """
+        SELECT subject, creation, `read`
+        FROM `tabNotification Log`
+        WHERE for_user = %s
+        ORDER BY creation DESC
+        LIMIT 10
+        """,
+        (user,),
+        as_dict=True,
+    )
+    return {
+        "unread": int(unread or 0),
+        "recent": [
+            {"subject": r["subject"], "creation": str(r["creation"]), "read": bool(r["read"])}
+            for r in recent
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Global search
+# ---------------------------------------------------------------------------
+def _search_group(label, rows, route_fmt, color="blue", icon=None):
+    out = []
+    for r in rows:
+        out.append({
+            "name": r.get("name"),
+            "title": r.get("title") or r.get("name"),
+            "subtitle": r.get("subtitle") or "",
+            "route": route_fmt.format(name=r.get("name")),
+        })
+    return {"label": label, "color": color, "icon": icon or "box", "items": out}
+
+
+@frappe.whitelist()
+def global_search(q, company=None, limit=10):
+    _check_permission()
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"query": q, "groups": []}
+    limit = max(1, min(int(limit or 10), 30))
+    like = "%{0}%".format(q)
+    groups = []
+
+    def get_list(doctype, fields, or_filters, limit_page_length=limit, order_by="modified desc"):
+        try:
+            return frappe.get_all(
+                doctype,
+                fields=fields,
+                or_filters=or_filters,
+                limit_page_length=limit_page_length,
+                order_by=order_by,
+            )
+        except Exception:
+            return []
+
+    # Items
+    items = get_list("Item", ["name", "item_name", "stock_uom", "disabled"],
+                     [["name", "like", like], ["item_name", "like", like]])
+    if items:
+        groups.append(_search_group(
+            _("Items"), items, "/app/item/{name}", "teal", "box",
+        ))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r.get("item_name") or r["name"],
+             "subtitle": "{0} · {1}".format(r["name"], r.get("stock_uom") or ""),
+             "route": "/app/item/{0}".format(r["name"])} for r in items
+        ]
+
+    # Customers
+    custs = get_list("Customer", ["name", "customer_name"],
+                     [["name", "like", like], ["customer_name", "like", like]])
+    if custs:
+        groups.append(_search_group(
+            _("Customers"), custs, "/app/customer/{name}", "blue", "users",
+        ))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r.get("customer_name") or r["name"],
+             "subtitle": r["name"], "route": "/app/customer/{0}".format(r["name"])} for r in custs
+        ]
+
+    # Suppliers
+    supps = get_list("Supplier", ["name", "supplier_name"],
+                     [["name", "like", like], ["supplier_name", "like", like]])
+    if supps:
+        groups.append(_search_group(
+            _("Suppliers"), supps, "/app/supplier/{name}", "green", "truck",
+        ))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r.get("supplier_name") or r["name"],
+             "subtitle": r["name"], "route": "/app/supplier/{0}".format(r["name"])} for r in supps
+        ]
+
+    # Sales Invoices
+    sis = get_list("Sales Invoice", ["name", "customer", "grand_total", "status"],
+                   [["name", "like", like]])
+    if sis:
+        groups.append(_search_group(_("Sales Invoices"), sis, "/app/sales-invoice/{name}", "purple", "file"))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r["name"],
+             "subtitle": "{0} · {1}".format(r.get("customer") or "", r.get("grand_total") or ""),
+             "route": "/app/sales-invoice/{0}".format(r["name"])} for r in sis
+        ]
+
+    # Purchase Invoices
+    pis = get_list("Purchase Invoice", ["name", "supplier", "grand_total", "status"],
+                   [["name", "like", like]])
+    if pis:
+        groups.append(_search_group(_("Purchase Invoices"), pis, "/app/purchase-invoice/{name}", "orange", "file"))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r["name"],
+             "subtitle": "{0} · {1}".format(r.get("supplier") or "", r.get("grand_total") or ""),
+             "route": "/app/purchase-invoice/{0}".format(r["name"])} for r in pis
+        ]
+
+    # Purchase Orders
+    pos = get_list("Purchase Order", ["name", "supplier", "grand_total", "status"],
+                   [["name", "like", like]])
+    if pos:
+        groups.append(_search_group(_("Purchase Orders"), pos, "/app/purchase-order/{name}", "yellow", "cart"))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r["name"],
+             "subtitle": "{0} · {1}".format(r.get("supplier") or "", r.get("grand_total") or ""),
+             "route": "/app/purchase-order/{0}".format(r["name"])} for r in pos
+        ]
+
+    # Barcodes
+    if frappe.db.table_exists("Barcode"):
+        bcs = get_list("Barcode", ["barcode", "item_code"],
+                       [["barcode", "like", like], ["item_code", "like", like]])
+        if bcs:
+            items_map = {}
+            codes = [r.get("item_code") for r in bcs if r.get("item_code")]
+            if codes:
+                try:
+                    items_map = {i["name"]: i.get("item_name") or i["name"] for i in
+                                 frappe.get_all("Item", filters={"name": ["in", codes]},
+                                                fields=["name", "item_name"])}
+                except Exception:
+                    items_map = {}
+            groups.append({
+                "label": _("Barcodes"),
+                "color": "purple",
+                "icon": "zap",
+                "items": [{
+                    "name": r.get("barcode") or r.get("item_code"),
+                    "title": r.get("barcode") or r.get("item_code"),
+                    "subtitle": (r.get("item_code") or "") + (" · " + items_map.get(r.get("item_code"), "") if items_map.get(r.get("item_code")) else ""),
+                    "route": "/app/item/{0}".format(r.get("item_code") or ""),
+                } for r in bcs],
+            })
+
+    # Reports
+    reps = get_list("Report", ["name", "ref_doctype"],
+                    [["name", "like", like]], limit_page_length=limit, order_by="name asc")
+    if reps:
+        groups.append(_search_group(_("Reports"), reps, "/app/query-report/{name}", "indigo", "chart"))
+        groups[-1]["items"] = [
+            {"name": r["name"], "title": r["name"],
+             "subtitle": r.get("ref_doctype") or "", "route": "/app/query-report/{0}".format(r["name"])} for r in reps
+        ]
+
+    # Settings
+    if "settings" in q.lower() or "setting" in q.lower():
+        groups.append({
+            "label": _("Settings"),
+            "color": "gray",
+            "icon": "file",
+            "items": [{
+                "name": "Nexora Settings",
+                "title": _("Nexora Settings"),
+                "subtitle": _("Workspace preferences"),
+                "route": "/app/nexora-settings",
+            }],
+        })
+
+    return {"query": q, "groups": groups}
+
+
+# ---------------------------------------------------------------------------
+# Barcode lifecycle API
+# ---------------------------------------------------------------------------
+def _default_selling_price_list():
+    pl = frappe.db.get_single_value("Selling Settings", "selling_price_list")
+    if pl:
+        return pl
+    row = frappe.get_all("Price List", filters=[["enabled", "=", 1], ["selling", "=", 1]], limit=1, order_by="name asc", pluck="name")
+    return row[0] if row else None
+
+
+def _enrich_items(items):
+    """Attach live stock quantity + default selling price to item rows."""
+    if not items:
+        return items
+    names = [i["name"] for i in items]
+    price_map = {}
+    stock_map = {}
+    try:
+        pl = _default_selling_price_list()
+        if pl:
+            prices = frappe.get_all("Item Price",
+                                    filters={"item_code": ["in", names], "price_list": pl},
+                                    fields=["item_code", "price_list_rate", "currency"])
+            for p in prices:
+                price_map[p["item_code"]] = {"price_list": pl, "rate": p.get("price_list_rate"), "currency": p.get("currency")}
+    except Exception:
+        pass
+    try:
+        bins = frappe.get_all("Bin", filters={"item_code": ["in", names]}, fields=["item_code", "actual_qty"])
+        for b in bins:
+            stock_map[b["item_code"]] = flt(stock_map.get(b["item_code"], 0)) + flt(b.get("actual_qty"))
+    except Exception:
+        pass
+    for i in items:
+        i["stock_qty"] = flt(stock_map.get(i["name"], 0))
+        i["price"] = price_map.get(i["name"]) or {}
+    return items
+
+
+@frappe.whitelist()
+def item_search(q=None, limit=10, with_price=True):
+    """Instant item lookup by item code or item name (partial match).
+
+    Barcode matches are resolved on the client from the Nexora barcode
+    registry; the server returns live item details, price, stock and company
+    so the Barcode Studio can load an item completely.
+    """
+    _check_permission()
+    q = (q or "").strip()
+    if len(q) < 1:
+        return {"items": []}
+    limit = max(1, min(int(limit or 10), 40))
+    like = "%{0}%".format(q)
+
+    items = frappe.get_all(
+        "Item",
+        fields=["name", "item_name", "stock_uom", "disabled", "image", "valuation_rate", "item_group"],
+        or_filters=[["name", "like", like], ["item_name", "like", like]],
+        limit_page_length=limit,
+        order_by="modified desc",
+    )
+    if not items:
+        return {"items": []}
+    if with_price:
+        _enrich_items(items)
+    company = _resolve_company()
+    for i in items:
+        i["company"] = company
+        i["barcode"] = ""
+    return {"items": items}
+
+
+@frappe.whitelist()
+def barcode_studio(company=None, limit=200):
+    """Aggregate payload for the full Barcode Studio workspace.
+
+    Item, price, stock, purchase receipt and purchase invoice data is live
+    ERPNext data. The barcode registry itself lives in the Nexora client so
+    the workspace can assign/generate labels without ERPNext schema changes.
+    """
+    _check_permission()
+    company = _resolve_company(company)
+    limit = max(10, min(int(limit or 200), 2000))
+
+    all_items = []
+    try:
+        all_items = frappe.get_all(
+            "Item",
+            fields=["name", "item_name", "stock_uom", "disabled", "valuation_rate", "item_group"],
+            limit_page_length=limit,
+            order_by="name asc",
+        )
+        _enrich_items(all_items)
+    except Exception:
+        all_items = []
+
+    names = [i["name"] for i in all_items]
+
+    pr_items = []
+    pi_items = []
+    try:
+        if names:
+            pr_items = frappe.get_all(
+                "Purchase Receipt Item",
+                filters={"item_code": ["in", names], "docstatus": 1},
+                fields=["name", "parent", "item_code", "item_name", "qty", "uom"],
+                limit_page_length=limit,
+                order_by="parent desc",
+            )
+    except Exception:
+        pr_items = []
+    try:
+        if names:
+            pi_items = frappe.get_all(
+                "Purchase Invoice Item",
+                filters={"item_code": ["in", names], "docstatus": 1},
+                fields=["name", "parent", "item_code", "item_name", "qty", "uom"],
+                limit_page_length=limit,
+                order_by="parent desc",
+            )
+    except Exception:
+        pi_items = []
+
+    def _parents(child_rows, doctype):
+        pnames = list({c["parent"] for c in child_rows})
+        if not pnames:
+            return {}
+        try:
+            docs = frappe.get_all(doctype, filters={"name": ["in", pnames]},
+                                  fields=["name", "supplier", "posting_date", "status", "grand_total"])
+            return {d["name"]: d for d in docs}
+        except Exception:
+            return {}
+
+    pr_parents = _parents(pr_items, "Purchase Receipt")
+    pi_parents = _parents(pi_items, "Purchase Invoice")
+
+    def _attach(rows, parents):
+        out = []
+        for r in rows:
+            p = parents.get(r["parent"]) or {}
+            out.append({
+                "docname": r["parent"],
+                "item_code": r["item_code"],
+                "item_name": r.get("item_name") or r["item_code"],
+                "qty": flt(r.get("qty", 0)),
+                "uom": r.get("uom") or "",
+                "supplier": p.get("supplier") or "",
+                "date": str(p.get("posting_date") or ""),
+                "status": p.get("status") or "",
+                "grand_total": p.get("grand_total") or 0,
+            })
+        return out
+
+    return {
+        "company": company,
+        "kpis": {
+            "total_items": len(all_items),
+            "pending_receipts": len(pr_items),
+            "pending_invoices": len(pi_items),
+        },
+        "items": all_items,
+        "pending_receipts": _attach(pr_items, pr_parents),
+        "pending_invoices": _attach(pi_items, pi_parents),
+    }
+
+
+# ---------------------------------------------------------------------------
+# v3.6 Analytics (12-month series, donuts, quick operations)
+# ---------------------------------------------------------------------------
+def _month_axis(n):
+    from calendar import month_abbr
+    today = getdate(nowdate())
+    out = []
+    for i in range(n - 1, -1, -1):
+        m = add_months(today, -i)
+        out.append({
+            "year": m.year,
+            "month": m.month,
+            "key": "{0:04d}-{1:02d}".format(m.year, m.month),
+            "label": month_abbr[m.month],
+        })
+    return out
+
+
+def _current_inventory_value():
+    rows = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(IFNULL(sle.stock_value, 0)), 0) AS value
+        FROM `tabStock Ledger Entry` sle
+        WHERE sle.name IN (
+            SELECT MAX(name) FROM `tabStock Ledger Entry`
+            GROUP BY item_code, warehouse
+        )
+        """,
+        as_dict=True,
+    )
+    return flt(rows[0]["value"], 2) if rows else 0
+
+
+def _series12(company):
+    axis = _month_axis(12)
+    start = "{0:04d}-{1:02d}-01".format(axis[0]["year"], axis[0]["month"])
+    end = str(nowdate())
+    keys = [m["key"] for m in axis]
+
+    sales_rows = frappe.db.sql(
+        """
+        SELECT DATE_FORMAT(si.posting_date, '%%Y-%%m') AS ym,
+               SUM(IFNULL(si.base_net_total, 0)) AS net,
+               SUM(IFNULL(si.base_grand_total, 0)) AS grand,
+               IFNULL(SUM(
+                   CASE WHEN IFNULL(it.is_stock_item, 1) = 1
+                        THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
+                        ELSE 0 END
+               ), 0) AS profit,
+               COUNT(DISTINCT si.name) AS count
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
+        LEFT JOIN `tabItem` it ON it.name = sii.item_code
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        GROUP BY ym
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+
+    purchase_rows = frappe.db.sql(
+        """
+        SELECT DATE_FORMAT(pi.posting_date, '%%Y-%%m') AS ym,
+               SUM(IFNULL(pi.base_net_total, 0)) AS net,
+               COUNT(DISTINCT pi.name) AS count
+        FROM `tabPurchase Invoice` pi
+        WHERE pi.docstatus = 1 AND pi.company = %s AND pi.posting_date BETWEEN %s AND %s
+        GROUP BY ym
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+
+    cash_rows = frappe.db.sql(
+        """
+        SELECT DATE_FORMAT(pe.posting_date, '%%Y-%%m') AS ym,
+               SUM(IF(pe.payment_type = 'Receive', IFNULL(pe.base_paid_amount, 0), 0)) AS received,
+               SUM(IF(pe.payment_type = 'Pay', IFNULL(pe.base_paid_amount, 0), 0)) AS paid
+        FROM `tabPayment Entry` pe
+        WHERE pe.docstatus = 1 AND pe.company = %s AND pe.posting_date BETWEEN %s AND %s
+        GROUP BY ym
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+
+    svd_rows = frappe.db.sql(
+        """
+        SELECT DATE_FORMAT(sle.posting_date, '%%Y-%%m') AS ym,
+               SUM(IFNULL(sle.stock_value_difference, 0)) AS svd
+        FROM `tabStock Ledger Entry` sle
+        WHERE sle.company = %s AND sle.posting_date BETWEEN %s AND %s
+        GROUP BY ym
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+
+    current_value = _current_inventory_value()
+
+    s_map = {r["ym"]: r for r in sales_rows}
+    p_map = {r["ym"]: r for r in purchase_rows}
+    c_map = {r["ym"]: r for r in cash_rows}
+    v_map = {r["ym"]: flt(r["svd"], 2) for r in svd_rows}
+
+    inv_vals = {}
+    running = current_value
+    desc = list(reversed(keys))
+    for i, k in enumerate(desc):
+        if i == 0:
+            inv_vals[k] = running
+        else:
+            running = flt(running - v_map.get(desc[i - 1], 0), 2)
+            inv_vals[k] = running
+
+    out = []
+    for m in axis:
+        k = m["key"]
+        s = s_map.get(k) or {}
+        p = p_map.get(k) or {}
+        c = c_map.get(k) or {}
+        received = flt(c.get("received"), 2)
+        paid = flt(c.get("paid"), 2)
+        out.append({
+            "key": k,
+            "label": m["label"],
+            "sales": flt(s.get("net") or s.get("grand") or 0, 2),
+            "grand": flt(s.get("grand") or 0, 2),
+            "profit": flt(s.get("profit") or 0, 2),
+            "invoices": int(s.get("count") or 0),
+            "purchases": flt(p.get("net") or 0, 2),
+            "purchase_orders": int(p.get("count") or 0),
+            "cash_in": received,
+            "cash_out": paid,
+            "cash_flow": flt(received - paid, 2),
+            "inventory_value": inv_vals.get(k, current_value),
+        })
+    return {"axis": keys, "months": out, "current_value": current_value}
+
+
+@frappe.whitelist()
+def series12(company=None):
+    _check_permission()
+    company = _resolve_company(company)
+    return _safe(lambda: _series12(company), {"axis": [], "months": []}, "series12")
+
+
+def _donuts(company):
+    today = getdate(nowdate())
+    year_start = str(add_days(today, -364))
+
+    cat_sales = frappe.db.sql(
+        """
+        SELECT IFNULL(sii.item_group, 'Uncategorized') AS category,
+               SUM(IFNULL(sii.amount, 0)) AS amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date >= %s
+        GROUP BY sii.item_group
+        ORDER BY amount DESC
+        LIMIT 8
+        """,
+        (company, year_start),
+        as_dict=True,
+    )
+
+    cat_inventory = frappe.db.sql(
+        """
+        SELECT IFNULL(it.item_group, 'Uncategorized') AS category,
+               SUM(t.sv) AS value
+        FROM (
+            SELECT sle.item_code, sle.warehouse, IFNULL(sle.stock_value, 0) AS sv
+            FROM `tabStock Ledger Entry` sle
+            WHERE sle.name IN (
+                SELECT MAX(name) FROM `tabStock Ledger Entry`
+                GROUP BY item_code, warehouse
+            )
+        ) t
+        INNER JOIN `tabItem` it ON it.name = t.item_code
+        WHERE IFNULL(it.disabled, 0) = 0
+        GROUP BY it.item_group
+        ORDER BY value DESC
+        LIMIT 8
+        """,
+        as_dict=True,
+    )
+
+    suppliers = frappe.db.sql(
+        """
+        SELECT pi.supplier, IFNULL(s.supplier_name, pi.supplier) AS supplier_name,
+               SUM(IFNULL(pi.base_net_total, 0)) AS amount
+        FROM `tabPurchase Invoice` pi
+        LEFT JOIN `tabSupplier` s ON s.name = pi.supplier
+        WHERE pi.docstatus = 1 AND pi.company = %s AND pi.posting_date >= %s
+        GROUP BY pi.supplier
+        ORDER BY amount DESC
+        LIMIT 8
+        """,
+        (company, year_start),
+        as_dict=True,
+    )
+
+    customers = _top_customers(company, year_start, str(today), limit=8)
+
+    def clean(rows, label_key, value_key, convert=False):
+        out = []
+        for r in rows:
+            v = flt(r[value_key], 2)
+            if v <= 0:
+                continue
+            out.append({"label": r[label_key], "value": v})
+        if not out:
+            return [{"label": _("No data"), "value": 1}]
+        return out
+
+    return {
+        "sales_by_category": clean(cat_sales, "category", "amount"),
+        "inventory_by_category": clean(cat_inventory, "category", "value"),
+        "customers": clean(customers, "customer_name", "amount"),
+        "suppliers": clean(suppliers, "supplier_name", "amount"),
+    }
+
+
+@frappe.whitelist()
+def donuts(company=None):
+    _check_permission()
+    company = _resolve_company(company)
+    return _safe(lambda: _donuts(company), {}, "donuts")
+
+
+def _quick_ops(company):
+    last_sales = frappe.db.sql(
+        """
+        SELECT name, customer, grand_total, status, posting_date
+        FROM `tabSales Invoice`
+        WHERE docstatus = 1 AND company = %s
+        ORDER BY posting_date DESC, creation DESC
+        LIMIT 8
+        """,
+        (company,),
+        as_dict=True,
+    )
+    last_purchase_orders = frappe.db.sql(
+        """
+        SELECT name, supplier, grand_total, status, transaction_date
+        FROM `tabPurchase Order`
+        WHERE docstatus < 2 AND company = %s
+        ORDER BY transaction_date DESC, creation DESC
+        LIMIT 6
+        """,
+        (company,),
+        as_dict=True,
+    )
+    last_payments = frappe.db.sql(
+        """
+        SELECT name, party_type, party, payment_type, base_paid_amount, posting_date, reference_no
+        FROM `tabPayment Entry`
+        WHERE docstatus = 1 AND company = %s
+        ORDER BY posting_date DESC, creation DESC
+        LIMIT 6
+        """,
+        (company,),
+        as_dict=True,
+    )
+    return {
+        "last_sales": [
+            {"name": r["name"], "customer": r["customer"], "amount": flt(r["grand_total"], 2),
+             "status": r["status"], "date": str(r["posting_date"] or "")}
+            for r in last_sales
+        ],
+        "last_purchase_orders": [
+            {"name": r["name"], "supplier": r["supplier"], "amount": flt(r["grand_total"], 2),
+             "status": r["status"], "date": str(r["transaction_date"] or "")}
+            for r in last_purchase_orders
+        ],
+        "last_payments": [
+            {"name": r["name"], "party_type": r["party_type"], "party": r["party"],
+             "type": r["payment_type"], "amount": flt(r["base_paid_amount"], 2),
+             "date": str(r["posting_date"] or ""), "reference_no": r.get("reference_no") or ""}
+            for r in last_payments
+        ],
+    }
+
+
+@frappe.whitelist()
+def quick_ops(company=None):
+    _check_permission()
+    company = _resolve_company(company)
+    return _safe(lambda: _quick_ops(company), {}, "quick_ops")
+
+
+# ---------------------------------------------------------------------------
+# v3.6 Native centers (pricing / exchange)
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def pricing_center(company=None, price_list=None):
+    _check_permission()
+    company = _resolve_company(company)
+    lists = frappe.db.sql(
+        """
+        SELECT pl.name, IFNULL(pl.currency, '') AS currency
+        FROM `tabPrice List` pl
+        WHERE IFNULL(pl.selling, 0) = 1
+        ORDER BY pl.name
+        """,
+        as_dict=True,
+    )
+    if not lists:
+        return {"price_lists": [], "price_list": None, "items": []}
+    active = price_list if price_list in {l["name"] for l in lists} else lists[0]["name"]
+    items = frappe.db.sql(
+        """
+        SELECT ip.item_code, IFNULL(it.item_name, ip.item_code) AS item_name,
+               ip.price_list_rate, IFNULL(ip.currency, '') AS currency,
+               IFNULL(it.valuation_rate, 0) AS valuation_rate
+        FROM `tabItem Price` ip
+        INNER JOIN `tabItem` it ON it.name = ip.item_code
+        WHERE ip.price_list = %s AND IFNULL(it.disabled, 0) = 0
+        ORDER BY ip.item_code
+        LIMIT 250
+        """,
+        (active,),
+        as_dict=True,
+    )
+    return {
+        "price_lists": [{"name": l["name"], "currency": l["currency"]} for l in lists],
+        "price_list": active,
+        "items": [
+            {"item_code": r["item_code"], "item_name": r["item_name"],
+             "price": flt(r["price_list_rate"], 2), "currency": r["currency"],
+             "cost": flt(r["valuation_rate"], 2)}
+            for r in items
+        ],
+    }
+
+
+@frappe.whitelist()
+def exchange_center(company=None):
+    _check_permission()
+    company = _resolve_company(company)
+    base = _company_currency(company)
+    rows = frappe.db.sql(
+        """
+        SELECT ce.from_currency, ce.to_currency, ce.exchange_rate, ce.date
+        FROM `tabCurrency Exchange` ce
+        WHERE (ce.from_currency, ce.to_currency, ce.date) IN (
+            SELECT from_currency, to_currency, MAX(date)
+            FROM `tabCurrency Exchange`
+            GROUP BY from_currency, to_currency
+        )
+        ORDER BY ce.date DESC, ce.creation DESC
+        """,
+        as_dict=True,
+    )
+    return {
+        "base_currency": base,
+        "rates": [
+            {"from_currency": r["from_currency"], "to_currency": r["to_currency"],
+             "rate": flt(r["exchange_rate"], 4), "date": str(r["date"] or "")}
+            for r in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# v3.6 Shipment Cost Intelligence
+# ---------------------------------------------------------------------------
+SHIPMENT_ALLOC_METHODS = ("Item Value", "Quantity", "Weight", "Volume", "Cartons", "Manual")
+SHIPMENT_EXPENSE_TYPES = ("Product Cost", "Freight", "Insurance", "Customs", "Clearance",
+                          "Port Fees", "Inland Transport", "Banking", "Other")
+
+
+def _landed_cost(expenses, items, alloc_method):
+    """Pure allocation engine. expenses: list of {expense_type, amount, item (optional)}.
+    items: list of {key, qty, weight, volume, cartons, product_cost}. Returns rich dict."""
+    if not items:
+        return {"ok": False, "error": "no items", "items": [], "expenses": [], "totals": {}}
+
+    def num(v):
+        return flt(v, 4)
+
+    base = alloc_method or "Item Value"
+    total_base = {}
+    for it in items:
+        if base == "Item Value":
+            b = num(it.get("product_cost") or 0)
+        elif base == "Quantity":
+            b = num(it.get("qty") or 0)
+        elif base == "Weight":
+            b = num(it.get("weight") or 0)
+        elif base == "Volume":
+            b = num(it.get("volume") or 0)
+        elif base == "Cartons":
+            b = num(it.get("cartons") or 0)
+        elif base == "Manual":
+            b = num(it.get("manual_share") or 0)
+        else:
+            b = num(it.get("product_cost") or 0)
+        total_base[it["key"]] = b
+
+    sum_base = sum(total_base.values())
+    if sum_base <= 0:
+        share = {k: 1.0 / max(1, len(items)) for k in total_base}
+    else:
+        share = {k: v / sum_base for k, v in total_base.items()}
+
+    cost_rows = [e for e in expenses if e.get("expense_type") == "Product Cost"]
+    other_rows = [e for e in expenses if e.get("expense_type") != "Product Cost"]
+
+    item_cost = {}
+    for it in items:
+        item_cost[it["key"]] = num(it.get("product_cost") or 0)
+    for e in cost_rows:
+        target = e.get("item") or e.get("item_key")
+        if target and target in item_cost:
+            item_cost[target] = num(item_cost[target] + e.get("amount") or 0)
+
+    allocated_expenses = []
+    for e in other_rows:
+        amount = num(e.get("amount") or 0)
+        if amount == 0:
+            continue
+        e_key = "{0}:{1}".format(e.get("expense_type"), e.get("index", 0))
+        parts = {}
+        for it in items:
+            k = it["key"]
+            a = flt(amount * share[k], 4)
+            parts[k] = a
+            item_cost[k] = num(item_cost[k] + a)
+        allocated_expenses.append({
+            "type": e.get("expense_type"),
+            "amount": amount,
+            "parts": parts,
+            "key": e_key,
+        })
+
+    out_items = []
+    for it in items:
+        k = it["key"]
+        qty = num(it.get("qty") or 0) or 1
+        landed = num(item_cost[k])
+        out_items.append({
+            "key": k,
+            "item_code": it.get("item_code") or it.get("name") or k,
+            "item_name": it.get("item_name") or it.get("item_code") or k,
+            "qty": num(it.get("qty") or 0),
+            "weight": num(it.get("weight") or 0),
+            "volume": num(it.get("volume") or 0),
+            "cartons": num(it.get("cartons") or 0),
+            "product_cost": num(it.get("product_cost") or 0),
+            "unit_cost": num((it.get("product_cost") or 0) / qty),
+            "landed_cost": landed,
+            "unit_landed_cost": num(landed / qty),
+            "extra_cost": num(landed - (it.get("product_cost") or 0)),
+        })
+
+    totals = {
+        "product_cost_total": num(sum(item_cost[k] - sum(
+            p.get("parts", {}).get(k, 0) for p in allocated_expenses) for k in item_cost)),
+        "expense_total": num(sum(e["amount"] for e in allocated_expenses)),
+        "landed_cost_total": num(sum(item_cost.values())),
+    }
+    return {
+        "ok": True,
+        "alloc_method": base,
+        "items": out_items,
+        "expenses": allocated_expenses,
+        "totals": totals,
+    }
+
+
+def _normalize_shipment(payload):
+    items = []
+    for i, raw in enumerate(payload.get("items") or []):
+        items.append({
+            "key": raw.get("key") or str(i + 1),
+            "item_code": raw.get("item_code") or "",
+            "item_name": raw.get("item_name") or "",
+            "qty": flt(raw.get("qty") or 0, 4),
+            "weight": flt(raw.get("weight") or 0, 4),
+            "volume": flt(raw.get("volume") or 0, 4),
+            "cartons": flt(raw.get("cartons") or 0, 4),
+            "product_cost": flt(raw.get("product_cost") or 0, 4),
+        })
+    expenses = []
+    for i, raw in enumerate(payload.get("expenses") or []):
+        expenses.append({
+            "index": i,
+            "expense_type": raw.get("expense_type") or "Other",
+            "amount": flt(raw.get("amount") or 0, 4),
+            "item": raw.get("item_key") or raw.get("item") or None,
+            "notes": raw.get("notes") or "",
+        })
+    return items, expenses
+
+
+def _shipment_list(company):
+    if not frappe.db.exists("DocType", "Nexora Shipment"):
+        return []
+    rows = frappe.db.sql(
+        """
+        SELECT name, shipment_name, supplier, origin, destination, shipping_company,
+               currency, status, alloc_method, shipment_date, company,
+               IFNULL(expense_total, 0) AS expense_total,
+               IFNULL(landed_cost_total, 0) AS landed_cost_total,
+               IFNULL(product_cost_total, 0) AS product_cost_total,
+               creation, modified
+        FROM `tabNexora Shipment`
+        WHERE company = %s
+        ORDER BY creation DESC
+        """,
+        (company,),
+        as_dict=True,
+    )
+    return [
+        {
+            "name": r["name"],
+            "shipment_name": r.get("shipment_name") or r["name"],
+            "supplier": r.get("supplier") or "",
+            "origin": r.get("origin") or "",
+            "destination": r.get("destination") or "",
+            "shipping_company": r.get("shipping_company") or "",
+            "currency": r.get("currency") or "",
+            "status": r.get("status") or "Draft",
+            "alloc_method": r.get("alloc_method") or "Item Value",
+            "shipment_date": str(r.get("shipment_date") or ""),
+            "expense_total": flt(r.get("expense_total"), 2),
+            "landed_cost_total": flt(r.get("landed_cost_total"), 2),
+            "product_cost_total": flt(r.get("product_cost_total"), 2),
+            "creation": str(r.get("creation") or ""),
+        }
+        for r in rows
+    ]
+
+
+def _shipment_get(name):
+    if not frappe.db.exists("Nexora Shipment", name):
+        frappe.throw(_("Shipment {0} not found").format(name))
+    doc = frappe.get_doc("Nexora Shipment", name)
+    items = [{
+        "key": d.name or "",
+        "item_code": d.item_code or "",
+        "item_name": d.item_name or "",
+        "qty": flt(d.qty, 4),
+        "weight": flt(d.weight, 4),
+        "volume": flt(d.volume, 4),
+        "cartons": flt(d.cartons, 4),
+        "product_cost": flt(d.product_cost, 4),
+        "unit_cost": flt(d.unit_cost, 4),
+        "landed_cost": flt(d.landed_cost, 4),
+        "unit_landed_cost": flt(d.unit_landed_cost, 4),
+    } for d in doc.get("items") or []]
+    expenses = [{
+        "index": i,
+        "expense_type": d.expense_type or "Other",
+        "amount": flt(d.amount, 4),
+        "item_key": d.item_key or "",
+        "notes": d.notes or "",
+    } for i, d in enumerate(doc.get("expenses") or [])]
+    return {
+        "name": doc.name,
+        "shipment_name": doc.shipment_name,
+        "company": doc.company,
+        "supplier": doc.supplier or "",
+        "origin": doc.origin or "",
+        "destination": doc.destination or "",
+        "shipping_company": doc.shipping_company or "",
+        "currency": doc.currency or "",
+        "exchange_rate": flt(doc.exchange_rate or 1, 4),
+        "status": doc.status or "Draft",
+        "locked": int(doc.locked or 0),
+        "alloc_method": doc.alloc_method or "Item Value",
+        "shipment_date": str(doc.shipment_date or ""),
+        "notes": doc.notes or "",
+        "items": items,
+        "expenses": expenses,
+        "totals": {
+            "product_cost_total": flt(doc.product_cost_total, 2),
+            "expense_total": flt(doc.expense_total, 2),
+            "landed_cost_total": flt(doc.landed_cost_total, 2),
+        },
+        "allocation_history": doc.allocation_history or "",
+    }
+
+
+def _shipment_save(payload):
+    if not frappe.db.exists("DocType", "Nexora Shipment"):
+        frappe.throw(_("Shipment module not migrated yet. Run bench migrate first."))
+    items, expenses = _normalize_shipment(payload)
+    calc = _landed_cost(expenses, items, payload.get("alloc_method"))
+    company = payload.get("company") or _resolve_company()
+    shipment_date = payload.get("shipment_date") or nowdate()
+
+    if payload.get("name"):
+        doc = frappe.get_doc("Nexora Shipment", payload["name"])
+        if int(doc.locked or 0):
+            frappe.throw(_("Shipment is closed and locked."))
+    else:
+        doc = frappe.new_doc("Nexora Shipment")
+    doc.company = company
+    doc.shipment_name = payload.get("shipment_name") or doc.shipment_name or "SHIP-{0}".format(
+        frappe.utils.now_datetime().strftime("%Y%m%d%H%M%S"))
+    doc.supplier = payload.get("supplier") or ""
+    doc.origin = payload.get("origin") or ""
+    doc.destination = payload.get("destination") or ""
+    doc.shipping_company = payload.get("shipping_company") or ""
+    doc.currency = payload.get("currency") or ""
+    doc.exchange_rate = flt(payload.get("exchange_rate") or 1, 4)
+    doc.alloc_method = payload.get("alloc_method") or "Item Value"
+    doc.shipment_date = shipment_date
+    doc.notes = payload.get("notes") or ""
+
+    doc.set("items", [])
+    doc.set("expenses", [])
+    if calc.get("ok"):
+        for it in calc["items"]:
+            doc.append("items", {
+                "item_code": it["item_code"],
+                "item_name": it["item_name"],
+                "qty": it["qty"],
+                "weight": it["weight"],
+                "volume": it["volume"],
+                "cartons": it["cartons"],
+                "product_cost": it["product_cost"],
+                "unit_cost": it["unit_cost"],
+                "landed_cost": it["landed_cost"],
+                "unit_landed_cost": it["unit_landed_cost"],
+            })
+        for e in expenses:
+            doc.append("expenses", {
+                "expense_type": e["expense_type"],
+                "amount": e["amount"],
+                "item_key": e["item"] or "",
+                "notes": e["notes"],
+            })
+        doc.product_cost_total = calc["totals"]["product_cost_total"]
+        doc.expense_total = calc["totals"]["expense_total"]
+        doc.landed_cost_total = calc["totals"]["landed_cost_total"]
+
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": doc.name, "ok": True, "calc": calc}
+
+
+def _shipment_close(name):
+    doc = frappe.get_doc("Nexora Shipment", name)
+    if int(doc.locked or 0):
+        return {"ok": True, "name": doc.name, "locked": True}
+    if not (doc.get("items") or []):
+        frappe.throw(_("Cannot close a shipment without line items."))
+    calc = _landed_cost(
+        [{"expense_type": e.expense_type, "amount": e.amount, "item": e.item_key or None}
+         for e in doc.get("expenses") or []],
+        [{"key": d.name, "item_code": d.item_code, "item_name": d.item_name, "qty": d.qty,
+          "weight": d.weight, "volume": d.volume, "cartons": d.cartons, "product_cost": d.product_cost}
+         for d in doc.get("items") or []],
+        doc.alloc_method,
+    )
+    doc.status = "Closed"
+    doc.locked = 1
+    doc.allocation_history = frappe.as_json(calc) if calc.get("ok") else ""
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    updated = 0
+    if calc.get("ok") and frappe.db.field_exists("Item", "valuation_rate"):
+        for it in calc["items"]:
+            if it["item_code"] and it["unit_landed_cost"] > 0:
+                frappe.db.set_value("Item", it["item_code"], "valuation_rate", flt(it["unit_landed_cost"], 4))
+                updated += 1
+        frappe.db.commit()
+    return {"ok": True, "name": doc.name, "locked": True, "updated_items": updated}
+
+
+@frappe.whitelist()
+def shipment_api(method="get", name=None, company=None, payload=None):
+    _check_permission()
+    if method == "get_all":
+        return _shipment_list(_resolve_company(company))
+    if method == "get":
+        return _shipment_get(name)
+    if method == "save":
+        return _shipment_save(payload or {})
+    if method == "close":
+        return _shipment_close(name)
+    frappe.throw(_("Unknown shipment method: {0}").format(method))
+
+
+# ---------------------------------------------------------------------------
+# Main entry
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def get_executive_dashboard(company=None):
+    _check_permission()
+    company = _resolve_company(company)
+
+    key = "nexora:exec:{0}".format(company or "default")
+    data = frappe.cache.get_value(key, generator=lambda: _build_payload(company))
+    frappe.cache.set_value(key, data, expires_in_sec=DASH_CACHE_TTL)
+    return data
+
+
+def _build_payload(company):
+    today = nowdate()
+    yesterday = add_days(today, -1)
+
+    sales = _safe(lambda: _build_sales(company, today, yesterday), {}, "sales")
+    cash = _safe(lambda: _cash_position(company), {}, "cash")
+    purchasing = _safe(lambda: _purchase_performance(company, today), {}, "purchasing")
+    inventory = _safe(lambda: _inventory_health(company), {}, "inventory")
+    moving = _safe(lambda: _fast_slow_moving(company, today), {}, "moving")
+    rates = _safe(lambda: _exchange_rates(company), {}, "exchange_rates")
+    pricing = _safe(lambda: _pricing_alerts(company), {"count": 0, "items": [], "impact": 0}, "pricing")
+    notifications = _safe(lambda: _notifications(), {"unread": 0, "recent": []}, "notifications")
+
+    company_currency = _company_currency(company)
+
+    return {
+        "company": company,
+        "company_currency": company_currency,
+        "as_at": today,
+        "as_at_time": frappe.utils.now_datetime().strftime("%H:%M"),
+        "sales": sales,
+        "cash": cash,
+        "purchasing": purchasing,
+        "inventory": inventory,
+        "moving": moving,
+        "exchange_rates": rates,
+        "pricing_alerts": pricing,
+        "notifications": notifications,
+    }
