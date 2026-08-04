@@ -66,114 +66,90 @@ def _pct(cur, prev):
 # ---------------------------------------------------------------------------
 # Sales / Profit
 # ---------------------------------------------------------------------------
-def _sales_stats(company, start, end):
-    row = frappe.db.sql(
-        """
-        SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
-        FROM `tabSales Invoice`
-        WHERE docstatus = 1 AND company = %s AND posting_date BETWEEN %s AND %s
-        """,
-        (company, start, end),
-        as_dict=True,
-    )
-    return {"amount": flt(row[0]["amount"], 2), "count": int(row[0]["count"] or 0)}
-
-
-def _profit_stats(company, start, end):
-    row = frappe.db.sql(
-        """
-        SELECT IFNULL(SUM(
-            CASE WHEN IFNULL(it.is_stock_item, 1) = 1
-                 THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
-                 ELSE 0 END
-        ), 0) AS profit
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        LEFT JOIN `tabItem` it ON it.name = sii.item_code
-        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
-        """,
-        (company, start, end),
-        as_dict=True,
-    )
-    return flt(row[0]["profit"], 2)
-
-
-def _sales_qty(company, start, end):
-    row = frappe.db.sql(
-        """
-        SELECT IFNULL(SUM(IFNULL(sii.qty, 0)), 0) AS qty
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
-        """,
-        (company, start, end),
-        as_dict=True,
-    )
-    return flt(row[0]["qty"], 2)
-
-
 def _build_sales(company, today, yesterday):
     month_start = getdate(today).replace(day=1)
     prev_month_start = getdate(add_months(month_start, -1))
     prev_month_end = getdate(add_days(month_start, -1))
-    prev_day = add_days(yesterday, -1)
 
-    today_s = _sales_stats(company, today, today)
-    yesterday_s = _sales_stats(company, yesterday, yesterday)
-    prev_day_s = _sales_stats(company, prev_day, prev_day)
-    month_s = _sales_stats(company, month_start, today)
-    prev_s = _sales_stats(company, prev_month_start, prev_month_end)
+    trend90 = _daily_trend(company, add_days(today, -89), today)
+    by_date = {r["date"]: r for r in trend90}
+
+    def day(d):
+        r = by_date.get(str(d)) or {}
+        return {"amount": flt(r.get("amount")), "count": int(r.get("count") or 0),
+                "profit": flt(r.get("profit")), "qty": flt(r.get("qty"))}
+
+    today_s = day(today)
+    yesterday_s = day(yesterday)
+    prev_day_s = day(add_days(yesterday, -1))
+
+    def range_sum(start, end):
+        amt = count = profit = qty = 0.0
+        cur = getdate(start)
+        end_d = getdate(end)
+        while cur <= end_d:
+            r = by_date.get(str(cur))
+            if r:
+                amt += flt(r.get("amount"))
+                count += int(r.get("count") or 0)
+                profit += flt(r.get("profit"))
+                qty += flt(r.get("qty"))
+            cur = add_days(cur, 1)
+        return {"amount": flt(amt, 2), "count": count, "profit": flt(profit, 2), "qty": flt(qty, 2)}
+
+    month_s = range_sum(month_start, today)
+    prev_s = range_sum(prev_month_start, prev_month_end)
+
+    avg7 = range_sum(add_days(yesterday, -7), add_days(yesterday, -1))
+    avg7_amt = flt(avg7["amount"] / 7, 2)
+    avg7_profit = flt(avg7["profit"] / 7, 2)
+    avg7_count = flt(avg7["count"] / 7, 1)
+    avg7_qty = flt(avg7["qty"] / 7, 2)
+
+    trend = trend90[-30:]
+    top_items = _top_items(company, add_days(today, -29), today)
+    top_customers = _top_customers(company, add_days(today, -29), today)
 
     def pct(cur, prev):
         if prev:
             return flt((cur - prev) / abs(prev) * 100, 1)
         return flt(100, 1) if cur else 0
 
-    profit_today = _profit_stats(company, today, today)
-    profit_yesterday = _profit_stats(company, yesterday, yesterday)
-    profit_prev_day = _profit_stats(company, prev_day, prev_day)
-    profit_month = _profit_stats(company, month_start, today)
-    profit_prev = _profit_stats(company, prev_month_start, prev_month_end)
-
-    qty_today = _sales_qty(company, today, today)
-    qty_yesterday = _sales_qty(company, yesterday, yesterday)
-    qty_prev_day = _sales_qty(company, prev_day, prev_day)
-    qty_month = _sales_qty(company, month_start, today)
-    qty_prev = _sales_qty(company, prev_month_start, prev_month_end)
-
-    trend = _daily_trend(company, add_days(today, -29), today)
-
-    top_items = _top_items(company, add_days(today, -29), today)
-    top_customers = _top_customers(company, add_days(today, -29), today)
-
     def avg(d):
         return flt(d["amount"] / d["count"], 2) if d["count"] else 0
 
     return {
-        "today": {"amount": today_s["amount"], "count": today_s["count"], "profit": profit_today, "qty": qty_today},
-        "yesterday": {"amount": yesterday_s["amount"], "count": yesterday_s["count"], "profit": profit_yesterday, "qty": qty_yesterday},
-        "prev_day": {"amount": prev_day_s["amount"], "count": prev_day_s["count"], "profit": profit_prev_day, "qty": qty_prev_day},
+        "today": today_s,
+        "yesterday": yesterday_s,
+        "prev_day": prev_day_s,
         "today_vs_yesterday": {
             "change_pct": pct(today_s["amount"], yesterday_s["amount"]),
-            "profit_change_pct": pct(profit_today, profit_yesterday),
+            "profit_change_pct": pct(today_s["profit"], yesterday_s["profit"]),
         },
         "yesterday_change": {
             "amount_pct": pct(yesterday_s["amount"], prev_day_s["amount"]),
             "count_pct": pct(yesterday_s["count"], prev_day_s["count"]),
-            "profit_pct": pct(profit_yesterday, profit_prev_day),
-            "qty_pct": pct(qty_yesterday, qty_prev_day),
+            "profit_pct": pct(yesterday_s["profit"], prev_day_s["profit"]),
+            "qty_pct": pct(yesterday_s["qty"], prev_day_s["qty"]),
             "avg_pct": pct(avg(yesterday_s), avg(prev_day_s)),
+        },
+        "avg_7d": {"amount": avg7_amt, "profit": avg7_profit, "count": avg7_count, "qty": avg7_qty},
+        "yesterday_vs_7d": {
+            "amount_pct": pct(yesterday_s["amount"], avg7_amt),
+            "profit_pct": pct(yesterday_s["profit"], avg7_profit),
+            "count_pct": pct(yesterday_s["count"], avg7_count),
+            "qty_pct": pct(yesterday_s["qty"], avg7_qty),
         },
         "yesterday_avg_invoice": avg(yesterday_s),
         "prev_avg_invoice": avg(prev_day_s),
         "month": {
             "amount": month_s["amount"],
             "count": month_s["count"],
-            "profit": profit_month,
-            "qty": qty_month,
+            "profit": month_s["profit"],
+            "qty": month_s["qty"],
             "prev_amount": prev_s["amount"],
-            "prev_profit": profit_prev,
-            "prev_qty": qty_prev,
+            "prev_profit": prev_s["profit"],
+            "prev_qty": prev_s["qty"],
             "change_pct": pct(month_s["amount"], prev_s["amount"]),
         },
         "trend": trend,
@@ -186,22 +162,30 @@ def _daily_trend(company, start, end):
     rows = frappe.db.sql(
         """
         SELECT si.posting_date AS d,
-               IFNULL(SUM(si.grand_total), 0) AS amount,
                COUNT(DISTINCT si.name) AS count,
-               IFNULL(SUM(
-                   CASE WHEN IFNULL(it.is_stock_item, 1) = 1
-                        THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
-                        ELSE 0 END
-               ), 0) AS profit,
-               IFNULL(SUM(IFNULL(sii.qty, 0)), 0) AS qty
+               IFNULL(SUM(si.grand_total), 0) AS amount,
+               IFNULL(SUM(x.profit), 0) AS profit,
+               IFNULL(SUM(x.qty), 0) AS qty
         FROM `tabSales Invoice` si
-        LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
-        LEFT JOIN `tabItem` it ON it.name = sii.item_code
+        LEFT JOIN (
+            SELECT sii.parent,
+                   SUM(CASE WHEN IFNULL(it.is_stock_item, 1) = 1
+                            THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
+                            ELSE 0 END) AS profit,
+                   SUM(IFNULL(sii.qty, 0)) AS qty
+            FROM `tabSales Invoice Item` sii
+            LEFT JOIN `tabItem` it ON it.name = sii.item_code
+            WHERE sii.parent IN (
+                SELECT name FROM `tabSales Invoice`
+                WHERE docstatus = 1 AND company = %s AND posting_date BETWEEN %s AND %s
+            )
+            GROUP BY sii.parent
+        ) x ON x.parent = si.name
         WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
         GROUP BY si.posting_date
         ORDER BY si.posting_date
         """,
-        (company, start, end),
+        (company, start, end, company, start, end),
         as_dict=True,
     )
     by_date = {r["d"]: r for r in rows}
@@ -267,57 +251,166 @@ def _top_customers(company, start, end, limit=10):
 # ---------------------------------------------------------------------------
 # Cash / Receivables / Payables
 # ---------------------------------------------------------------------------
-def _asof_series(company, today, account_types, days=14):
-    """Daily running balance series for a set of account types (GL-backed)."""
-    accounts = frappe.db.sql(
-        """
-        SELECT name FROM `tabAccount`
-        WHERE company = %s AND is_group = 0 AND disabled = 0
-          AND account_type IN ({0})
-        """.format(",".join(["%s"] * len(account_types))),
-        (company,) + tuple(account_types),
-        pluck=True,
-    )
-    if not accounts:
-        return []
-    ph = ",".join(["%s"] * len(accounts))
-    start = add_days(today, -(days - 1))
+def _gl_series_map(company, today, groups, days=14):
+    """Consolidated daily running-balance series for GL account-type groups.
 
-    base = frappe.db.sql(
+    groups: list of (label, (account_type, ...)) e.g. [("cash", ("Cash", "Bank"))].
+    Returns {label: [{"date": "YYYY-MM-DD", "amount": float}, ...]}.
+    Runs exactly three queries regardless of the number of groups (no N+1).
+    """
+    start = getdate(add_days(today, -(days - 1)))
+    conds = []
+    params = [company]
+    for _, ts in groups:
+        conds.append("a.account_type IN ({0})".format(",".join(["%s"] * len(ts))))
+        params.extend(ts)
+    rows = frappe.db.sql(
         """
-        SELECT IFNULL(SUM(IFNULL(debit, 0) - IFNULL(credit, 0)), 0) AS bal
+        SELECT a.name, a.account_type
+        FROM `tabAccount` a
+        WHERE a.company = %s AND a.is_group = 0 AND a.disabled = 0 AND ({0})
+        """.format(" OR ".join(conds)),
+        tuple(params),
+        as_dict=True,
+    )
+    label_of = {}
+    accs = []
+    for label, ts in groups:
+        for r in rows:
+            if r["account_type"] in ts and r["name"] not in label_of:
+                label_of[r["name"]] = label
+                accs.append(r["name"])
+    result = {label: [] for label, _ in groups}
+    if not accs:
+        return result
+    ph = ",".join(["%s"] * len(accs))
+    base_rows = frappe.db.sql(
+        """
+        SELECT account, SUM(IFNULL(debit, 0) - IFNULL(credit, 0)) AS bal
         FROM `tabGL Entry`
         WHERE company = %s AND account IN ({0}) AND posting_date < %s
           AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
+        GROUP BY account
         """.format(ph),
-        (company,) + tuple(accounts) + (start,),
-    )[0][0]
-
-    rows = frappe.db.sql(
+        (company,) + tuple(accs) + (start,),
+        as_dict=True,
+    )
+    base_by_acc = {r["account"]: flt(r["bal"]) for r in base_rows}
+    daily_rows = frappe.db.sql(
         """
-        SELECT posting_date AS d, SUM(IFNULL(debit, 0) - IFNULL(credit, 0)) AS net
+        SELECT account, posting_date AS d, SUM(IFNULL(debit, 0) - IFNULL(credit, 0)) AS net
         FROM `tabGL Entry`
         WHERE company = %s AND account IN ({0}) AND posting_date BETWEEN %s AND %s
           AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
-        GROUP BY posting_date
-        ORDER BY posting_date
+        GROUP BY account, posting_date
         """.format(ph),
-        (company,) + tuple(accounts) + (start, today),
+        (company,) + tuple(accs) + (start, today),
         as_dict=True,
     )
-    by_date = {r["d"]: flt(r["net"]) for r in rows}
-    out = []
-    cur = getdate(start)
-    bal = flt(base)
-    while cur <= getdate(today):
-        bal += by_date.get(cur, 0)
-        out.append({"date": str(cur), "amount": flt(bal, 2)})
-        cur = add_days(cur, 1)
-    return out
+    nets = {}
+    for r in daily_rows:
+        nets.setdefault(r["account"], {})[r["d"]] = flt(r["net"])
+    for label, ts in groups:
+        laccs = [a for a in accs if label_of[a] == label]
+        running = sum(base_by_acc.get(a, 0) for a in laccs)
+        out = []
+        cur = getdate(start)
+        while cur <= getdate(today):
+            for a in laccs:
+                running += nets.get(a, {}).get(cur, 0)
+            out.append({"date": str(cur), "amount": flt(running, 2)})
+            cur = add_days(cur, 1)
+        result[label] = out
+    return result
 
 
-def _cash_position(company, today=None, cash_series=None):
+def _receivables_detail(company):
+    rows = frappe.db.sql(
+        """
+        SELECT si.name, si.customer, IFNULL(c.customer_name, si.customer_name) AS customer_name,
+               si.posting_date, si.due_date, IFNULL(si.outstanding_amount, 0) AS outstanding
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        WHERE si.docstatus = 1 AND si.company = %s AND IFNULL(si.outstanding_amount, 0) > 0
+        ORDER BY si.due_date
+        """,
+        (company,),
+        as_dict=True,
+    )
+    today = getdate(nowdate())
+    total = flt(sum(flt(r["outstanding"]) for r in rows), 2)
+    overdue_rows = [r for r in rows if r.get("due_date") and getdate(r["due_date"]) < today]
+    overdue = flt(sum(flt(r["outstanding"]) for r in overdue_rows), 2)
+    aging = {"current": 0.0, "1_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
+    for r in rows:
+        days_ = (today - getdate(r["due_date"])).days if r.get("due_date") else 0
+        o = flt(r["outstanding"])
+        if days_ <= 0:
+            aging["current"] += o
+        elif days_ <= 30:
+            aging["1_30"] += o
+        elif days_ <= 60:
+            aging["31_60"] += o
+        elif days_ <= 90:
+            aging["61_90"] += o
+        else:
+            aging["90_plus"] += o
+    top = {}
+    for r in rows:
+        t = top.setdefault(r["customer"], {
+            "customer": r["customer"],
+            "customer_name": r.get("customer_name") or r["customer"],
+            "amount": 0.0, "overdue": 0.0, "count": 0,
+        })
+        t["amount"] += flt(r["outstanding"])
+        t["count"] += 1
+        if r.get("due_date") and getdate(r["due_date"]) < today:
+            t["overdue"] += flt(r["outstanding"])
+    top5 = [
+        {"customer": v["customer"], "customer_name": v["customer_name"],
+         "amount": flt(v["amount"], 2), "overdue": flt(v["overdue"], 2), "count": v["count"]}
+        for v in sorted(top.values(), key=lambda v: v["amount"], reverse=True)[:5]
+    ]
+    return {
+        "total": total,
+        "overdue": overdue,
+        "overdue_pct": flt(overdue / total * 100, 1) if total else 0,
+        "count": len(rows),
+        "overdue_count": len(overdue_rows),
+        "aging": {k: flt(v, 2) for k, v in aging.items()},
+        "top": top5,
+    }
+
+
+def _payables_detail(company):
+    rows = frappe.db.sql(
+        """
+        SELECT pi.name, pi.supplier, IFNULL(s.supplier_name, pi.supplier_name) AS supplier_name,
+               pi.posting_date, pi.due_date, IFNULL(pi.outstanding_amount, 0) AS outstanding
+        FROM `tabPurchase Invoice` pi
+        LEFT JOIN `tabSupplier` s ON s.name = pi.supplier
+        WHERE pi.docstatus = 1 AND pi.company = %s AND IFNULL(pi.outstanding_amount, 0) > 0
+        ORDER BY pi.due_date
+        """,
+        (company,),
+        as_dict=True,
+    )
+    today = getdate(nowdate())
+    total = flt(sum(flt(r["outstanding"]) for r in rows), 2)
+    overdue_rows = [r for r in rows if r.get("due_date") and getdate(r["due_date"]) < today]
+    overdue = flt(sum(flt(r["outstanding"]) for r in overdue_rows), 2)
+    return {
+        "total": total,
+        "overdue": overdue,
+        "overdue_pct": flt(overdue / total * 100, 1) if total else 0,
+        "count": len(rows),
+        "overdue_count": len(overdue_rows),
+    }
+
+
+def _cash_position(company, today=None, series=None):
     today = today or nowdate()
+    series = series or {}
     accounts = frappe.db.sql(
         """
         SELECT a.name, a.account_type, a.account_currency,
@@ -335,36 +428,36 @@ def _cash_position(company, today=None, cash_series=None):
     cash = sum(flt(a["balance"]) for a in accounts if a["account_type"] == "Cash")
     bank = sum(flt(a["balance"]) for a in accounts if a["account_type"] == "Bank")
 
-    recv = frappe.db.sql(
-        "SELECT IFNULL(SUM(outstanding_amount), 0) FROM `tabSales Invoice` WHERE docstatus = 1 AND company = %s",
-        (company,),
-    )[0][0]
-    pay = frappe.db.sql(
-        "SELECT IFNULL(SUM(outstanding_amount), 0) FROM `tabPurchase Invoice` WHERE docstatus = 1 AND company = %s",
-        (company,),
-    )[0][0]
+    recv_detail = _receivables_detail(company)
+    pay_detail = _payables_detail(company)
+    recv = recv_detail["total"]
+    pay = pay_detail["total"]
 
-    series = cash_series if cash_series is not None else _asof_series(company, today, ("Cash", "Bank"))
-    ar_series = _asof_series(company, today, ("Receivable",))
-    ap_series = _asof_series(company, today, ("Payable",))
+    cash_series = series.get("cash") or (_gl_series_map(company, today, [("cash", ("Cash", "Bank"))], 14).get("cash") or [])
+    ar_series = series.get("ar") or (_gl_series_map(company, today, [("ar", ("Receivable",))], 14).get("ar") or [])
+    ap_series = series.get("ap") or (_gl_series_map(company, today, [("ap", ("Payable",))], 14).get("ap") or [])
     total = flt(cash + bank, 2)
-    prev_total = series[0]["amount"] if len(series) > 1 else None
-    change_pct_7d = None
-    if prev_total:
-        change_pct_7d = flt((total - prev_total) / abs(prev_total) * 100, 1) if prev_total else None
+    prev_total = cash_series[0]["amount"] if len(cash_series) > 1 else None
+    change_pct_7d = flt((total - prev_total) / abs(prev_total) * 100, 1) if prev_total else None
+    yesterday_total = cash_series[-2]["amount"] if len(cash_series) >= 2 else total
 
     return {
         "cash": flt(cash, 2),
         "bank": flt(bank, 2),
         "total": total,
-        "receivables": flt(recv, 2),
-        "payables": flt(pay, 2),
+        "receivables": recv,
+        "payables": pay,
         "net_position": flt(cash + bank - pay + recv, 2),
         "prev_total": flt(prev_total, 2) if prev_total is not None else 0,
         "change_pct_7d": change_pct_7d,
-        "series": series,
+        "yesterday": flt(yesterday_total, 2),
+        "series": cash_series,
         "ar_series": ar_series,
         "ap_series": ap_series,
+        "receivables_detail": recv_detail,
+        "payables_detail": pay_detail,
+        "overdue_receivables": recv_detail["overdue"],
+        "overdue_payables": pay_detail["overdue"],
         "accounts": [
             {"name": a["name"], "account_type": a["account_type"], "balance": flt(a["balance"], 2)}
             for a in accounts
@@ -397,18 +490,24 @@ def _purchase_performance(company, today):
 
     requests = _purchase_requests(company)
     top_suppliers = _top_suppliers(company, add_days(today, -29), today)
-    pending_pos = {"count": 0, "amount": 0}
+    pending_pos = {"count": 0, "amount": 0, "avg_age_days": 0, "avg_delay_days": 0}
     if frappe.db.table_exists("Purchase Order"):
         row = frappe.db.sql(
             """
-            SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+            SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count,
+                   IFNULL(AVG(DATEDIFF(%s, IFNULL(transaction_date, creation))), 0) AS avg_age
             FROM `tabPurchase Order`
             WHERE docstatus = 0 AND company = %s
             """,
-            (company,),
+            (today, company),
             as_dict=True,
         )
-        pending_pos = {"count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+        pending_pos = {
+            "count": int(row[0]["count"] or 0),
+            "amount": flt(row[0]["amount"], 2),
+            "avg_age_days": flt(row[0]["avg_age"] or 0, 1),
+            "avg_delay_days": _po_delay_days(company, today),
+        }
 
     return {
         "month": {"amount": month["amount"], "count": month["count"],
@@ -435,19 +534,46 @@ def _purchase_requests(company):
     return {"available": True, "count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
 
 
-def _sales_orders_pending(company):
+def _sales_orders_pending(company, today=None):
+    today = today or nowdate()
     if not frappe.db.table_exists("Sales Order"):
-        return {"count": 0, "amount": 0}
+        return {"count": 0, "amount": 0, "avg_age_days": 0}
     row = frappe.db.sql(
         """
-        SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+        SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count,
+               IFNULL(AVG(DATEDIFF(%s, IFNULL(transaction_date, creation))), 0) AS avg_age
         FROM `tabSales Order`
         WHERE docstatus = 0 AND company = %s
         """,
-        (company,),
+        (today, company),
         as_dict=True,
     )
-    return {"count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+    return {
+        "count": int(row[0]["count"] or 0),
+        "amount": flt(row[0]["amount"], 2),
+        "avg_age_days": flt(row[0]["avg_age"] or 0, 1),
+    }
+
+
+def _po_delay_days(company, today):
+    """Average days past expected delivery for open (not fully received) POs."""
+    if not frappe.db.field_exists("Purchase Order", "per_received"):
+        return 0
+    try:
+        row = frappe.db.sql(
+            """
+            SELECT IFNULL(AVG(DATEDIFF(%s, IFNULL(schedule_date, transaction_date))), 0) AS d
+            FROM `tabPurchase Order`
+            WHERE docstatus = 1 AND company = %s AND IFNULL(per_received, 0) < 100
+              AND IFNULL(schedule_date, transaction_date) IS NOT NULL
+              AND IFNULL(schedule_date, transaction_date) < %s
+            """,
+            (today, company, today),
+            as_dict=True,
+        )
+        return flt(row[0]["d"] or 0, 1)
+    except Exception:
+        return 0
 
 
 def _doc_series(company, today, doctype, days=14, docstatus=0):
@@ -557,11 +683,14 @@ def _top_suppliers(company, start, end, limit=10):
 # ---------------------------------------------------------------------------
 # Inventory
 # ---------------------------------------------------------------------------
-def _inventory_health(company):
-    bins = frappe.db.sql(
+def _stock_by_item(company):
+    """Single snapshot of every stock item's current Bin quantity and value."""
+    return frappe.db.sql(
         """
-        SELECT b.item_code, it.item_name, it.safety_stock, it.valuation_rate,
-               SUM(IFNULL(b.actual_qty, 0)) AS qty
+        SELECT b.item_code, it.item_name, IFNULL(it.safety_stock, 0) AS safety_stock,
+               IFNULL(it.valuation_rate, 0) AS valuation_rate,
+               SUM(IFNULL(b.actual_qty, 0)) AS qty,
+               SUM(IFNULL(b.actual_qty, 0) * IFNULL(it.valuation_rate, 0)) AS value
         FROM `tabBin` b
         INNER JOIN `tabItem` it ON it.name = b.item_code
         WHERE it.disabled = 0 AND IFNULL(it.is_stock_item, 1) = 1
@@ -570,36 +699,69 @@ def _inventory_health(company):
         as_dict=True,
     )
 
+
+def _consumption_map(company, days, end=None):
+    """Units sold per item in the last `days` days (Sales Invoice based)."""
+    end = end or nowdate()
+    start = add_days(end, -(days - 1))
+    rows = frappe.db.sql(
+        """
+        SELECT sii.item_code, SUM(IFNULL(sii.qty, 0)) AS qty, SUM(IFNULL(sii.amount, 0)) AS amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        GROUP BY sii.item_code
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+    return {r["item_code"]: {"qty": flt(r["qty"]), "amount": flt(r["amount"])} for r in rows}
+
+
+def _item_urgency(qty, threshold):
+    if flt(qty) <= 0:
+        return "critical"
+    if flt(threshold) > 0 and flt(qty) <= flt(threshold):
+        return "low"
+    return "ok"
+
+
+def _inventory_health(company, today=None, bins=None, series=None):
+    today = today or nowdate()
+    bins = bins if bins is not None else _stock_by_item(company)
     reorder = frappe.db.sql(
         "SELECT parent AS item_code, MIN(IFNULL(warehouse_reorder_level, 0)) AS level "
         "FROM `tabItem Reorder` GROUP BY parent",
         as_dict=True,
     )
     reorder_map = {r["item_code"]: flt(r["level"]) for r in reorder}
-
-    all_stock_items = frappe.db.sql(
-        "SELECT name, item_name, safety_stock, valuation_rate FROM `tabItem` "
-        "WHERE disabled = 0 AND IFNULL(is_stock_item, 1) = 1",
-        as_dict=True,
-    )
-    bin_map = {r["item_code"]: r for r in bins}
+    cons30 = _consumption_map(company, 30, today)
 
     low_stock = []
     out_of_stock = []
-    for it in all_stock_items:
-        qty = flt(bin_map.get(it["name"], {}).get("qty", 0))
-        threshold = reorder_map.get(it["name"], flt(it["safety_stock"] or 0))
+    for r in bins:
+        qty = flt(r["qty"])
+        threshold = reorder_map.get(r["item_code"], flt(r["safety_stock"] or 0))
+        consumed = cons30.get(r["item_code"], {}).get("qty", 0)
+        daily = consumed / 30.0 if consumed else 0
+        days_left = flt(qty / daily, 1) if daily > 0 else None
         rec = {
-            "item_code": it["name"],
-            "item_name": it["item_name"],
+            "item_code": r["item_code"],
+            "item_name": r["item_name"],
             "qty": qty,
             "threshold": threshold,
-            "valuation_rate": flt(it["valuation_rate"], 2),
+            "valuation_rate": flt(r["valuation_rate"], 2),
+            "days_of_stock": days_left,
+            "urgency": _item_urgency(qty, threshold),
         }
         if qty <= 0:
             out_of_stock.append(rec)
         elif threshold > 0 and qty <= threshold:
             low_stock.append(rec)
+
+    low_stock.sort(key=lambda x: flt(x["qty"]) / x["threshold"] if x["threshold"] else 1)
+    out_of_stock.sort(key=lambda x: x["valuation_rate"], reverse=True)
+    critical = [r for r in out_of_stock if r["urgency"] == "critical"]
 
     warehouses = frappe.db.sql(
         """
@@ -613,15 +775,23 @@ def _inventory_health(company):
         """,
         as_dict=True,
     )
-    total_value = sum(flt(w["value"]) for w in warehouses)
-    total_qty = sum(flt(w["qty"]) for w in warehouses)
+    total_value = flt(sum(flt(r["value"]) for r in bins), 2)
+    total_qty = flt(sum(flt(r["qty"]) for r in bins), 2)
+
+    series = series or _inventory_value_series(company, today, 14)
+    prev_value = series[-2]["amount"] if len(series) >= 2 else None
+    change_pct = flt((total_value - prev_value) / abs(prev_value) * 100, 1) if prev_value else None
 
     return {
-        "total_value": flt(total_value, 2),
-        "total_qty": flt(total_qty, 2),
-        "item_count": len(all_stock_items),
+        "total_value": total_value,
+        "total_qty": total_qty,
+        "item_count": len(bins),
         "low_stock": {"count": len(low_stock), "items": low_stock[:10]},
         "out_of_stock": {"count": len(out_of_stock), "items": out_of_stock[:10]},
+        "critical_count": len(critical),
+        "prev_value": flt(prev_value, 2) if prev_value is not None else 0,
+        "change_pct": change_pct,
+        "series": series,
         "warehouses": [
             {"warehouse": w["warehouse"], "items": int(w["items"] or 0), "qty": flt(w["qty"], 2), "value": flt(w["value"], 2)}
             for w in warehouses
@@ -629,48 +799,71 @@ def _inventory_health(company):
     }
 
 
-def _fast_slow_moving(company, today):
-    start_90 = add_days(today, -89)
-    sold = frappe.db.sql(
-        """
-        SELECT sii.item_code, SUM(IFNULL(sii.qty, 0)) AS qty, SUM(IFNULL(sii.amount, 0)) AS amount
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date >= %s
-        GROUP BY sii.item_code
-        """,
-        (company, start_90),
-        as_dict=True,
-    )
-    sold_map = {r["item_code"]: r for r in sold}
-    fast = sorted(sold, key=lambda r: flt(r["qty"]), reverse=True)[:10]
+def _inventory_intelligence(company, today, bins=None):
+    """Real inventory classification: top moving / dead / fast / slow / fast-growing."""
+    today = today or nowdate()
+    bins = bins if bins is not None else _stock_by_item(company)
+    in_stock = {r["item_code"]: r for r in bins if flt(r["qty"]) > 0}
 
-    in_stock = frappe.db.sql(
-        """
-        SELECT b.item_code, it.item_name, IFNULL(it.valuation_rate, 0) AS valuation_rate,
-               SUM(IFNULL(b.actual_qty, 0)) AS qty
-        FROM `tabBin` b
-        INNER JOIN `tabItem` it ON it.name = b.item_code
-        WHERE it.disabled = 0 AND IFNULL(it.is_stock_item, 1) = 1
-        GROUP BY b.item_code, it.item_name, it.valuation_rate
-        HAVING qty > 0
-        """,
-        as_dict=True,
-    )
-    slow = [
-        r for r in in_stock if r["item_code"] not in sold_map
-    ]
-    slow.sort(key=lambda r: flt(r["qty"]) * flt(r["valuation_rate"]), reverse=True)
+    cons30 = _consumption_map(company, 30, today)
+    cons_prev = _consumption_map(company, 30, add_days(today, -30))
+
+    moved = []
+    for code, r in in_stock.items():
+        c = cons30.get(code) or {"qty": 0, "amount": 0}
+        qty = flt(r["qty"])
+        sold = flt(c["qty"])
+        rec = {
+            "item_code": code,
+            "item_name": r["item_name"],
+            "qty": qty,
+            "sold_30d": sold,
+            "value_30d": flt(c["amount"]),
+            "stock_value": flt(r["value"]),
+            "days_of_stock": flt(qty / (sold / 30.0), 1) if sold else None,
+            "turnover": flt(sold / qty, 3) if qty > 0 else 0,
+        }
+        moved.append(rec)
+    moved.sort(key=lambda x: (x["sold_30d"], x["value_30d"]), reverse=True)
+
+    top_moving = moved[:10]
+    dead_stock = sorted([r for r in moved if r["sold_30d"] == 0],
+                        key=lambda x: x["stock_value"], reverse=True)
+    sellable = [r for r in moved if r["sold_30d"] > 0]
+    fast_moving = sorted(sellable, key=lambda x: x["turnover"], reverse=True)[:10]
+    slow_moving = sorted(sellable, key=lambda x: x["turnover"])[:10]
+
+    growing = []
+    for r in sellable:
+        prev = flt(cons_prev.get(r["item_code"], {}).get("qty", 0))
+        if prev > 0:
+            pct_g = flt((r["sold_30d"] - prev) / prev * 100, 1)
+            if pct_g >= 10:
+                growing.append(dict(r, growth_pct=pct_g, prev_30d_qty=flt(prev, 2)))
+    growing.sort(key=lambda x: x["growth_pct"], reverse=True)
+    growing = growing[:10]
+
+    def slim(rows):
+        return [
+            {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2),
+             "sold_30d": flt(r["sold_30d"], 2), "value_30d": flt(r["value_30d"], 2),
+             "stock_value": flt(r["stock_value"], 2),
+             "days_of_stock": r["days_of_stock"], "turnover": flt(r["turnover"], 3)}
+            for r in rows
+        ]
 
     return {
-        "fast": [
-            {"item_code": r["item_code"], "qty": flt(r["qty"], 2), "amount": flt(r["amount"], 2)}
-            for r in fast
-        ],
-        "slow": [
+        "top_moving": slim(top_moving),
+        "dead_stock": slim(dead_stock[:10]),
+        "dead_stock_count": len(dead_stock),
+        "fast_moving": slim(fast_moving),
+        "slow_moving": slim(slow_moving),
+        "slow_moving_count": len(slow_moving),
+        "fast_growing": [
             {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2),
-             "valuation_rate": flt(r["valuation_rate"], 2)}
-            for r in slow[:10]
+             "sold_30d": flt(r["sold_30d"], 2), "prev_30d_qty": r["prev_30d_qty"],
+             "growth_pct": r["growth_pct"]}
+            for r in growing
         ],
     }
 
@@ -1791,9 +1984,15 @@ def shipment_api(method="get", name=None, company=None, payload=None):
 # ---------------------------------------------------------------------------
 def _kpi_series(company, today):
     days = 14
+    gl = _gl_series_map(company, today, [
+        ("cash", ("Cash", "Bank")),
+        ("ar", ("Receivable",)),
+        ("ap", ("Payable",)),
+    ], days)
     return {
-        "cash": _asof_series(company, today, ("Cash", "Bank"), days),
-        "ar": _asof_series(company, today, ("Receivable",), days),
+        "cash": gl["cash"],
+        "ar": gl["ar"],
+        "ap": gl["ap"],
         "value": _inventory_value_series(company, today, days),
         "po": _doc_series(company, today, "Purchase Order", days),
         "so": _doc_series(company, today, "Sales Order", days),
@@ -1804,11 +2003,13 @@ def _kpi_series(company, today):
 def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
     trend = sales.get("trend") or []
     yesterday_s = (sales.get("yesterday") or {})
+    vs7 = (sales.get("yesterday_vs_7d") or {})
+    avg7 = (sales.get("avg_7d") or {})
     pos = (purchasing or {}).get("pending_pos") or {}
     low = (inventory or {}).get("low_stock") or {}
 
-    sales_spark = [flt(r.get("amount"), 2) for r in trend[-15:-1]]
-    profit_spark = [flt(r.get("profit"), 2) for r in trend[-15:-1]]
+    sales_spark = [flt(r.get("amount"), 2) for r in trend[-14:]]
+    profit_spark = [flt(r.get("profit"), 2) for r in trend[-14:]]
     cash_spark = [flt(r.get("amount"), 2) for r in (series.get("cash") or [])]
     ar_spark = [flt(r.get("amount"), 2) for r in (series.get("ar") or [])]
     val_spark = [flt(r.get("amount"), 2) for r in (series.get("value") or [])]
@@ -1816,9 +2017,8 @@ def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
     so_spark = [flt(r.get("count"), 2) for r in (series.get("so") or [])]
     stock_spark = [flt(r.get("count"), 2) for r in (series.get("stockout") or [])]
 
-    def kpi(key, icon, title, value, spark, currency=False, count=False, click=None):
-        pct = prev = None
-        if len(spark) >= 2:
+    def kpi(key, icon, title, value, spark, currency=False, count=False, pct=None, prev=None, click=None):
+        if pct is None and len(spark) >= 2:
             prev = spark[-2]
             cur = spark[-1]
             pct = _pct(cur, prev)
@@ -1829,7 +2029,7 @@ def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
             "value": flt(value, 2) if currency else (int(value) if count else flt(value, 2)),
             "currency": bool(currency),
             "count": bool(count),
-            "pct": pct,
+            "pct": flt(pct, 1) if pct is not None else None,
             "prev": flt(prev, 2) if prev is not None else None,
             "spark": spark,
             "click": click or key,
@@ -1837,15 +2037,19 @@ def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
 
     return [
         kpi("yesterday-sales", "trending-up", _("Yesterday Sales"),
-            flt(yesterday_s.get("amount")), sales_spark, currency=True, click="sales-yesterday"),
+            flt(yesterday_s.get("amount")), sales_spark, currency=True,
+            pct=vs7.get("amount_pct"), prev=avg7.get("amount"), click="sales-yesterday"),
         kpi("yesterday-profit", "activity", _("Yesterday Profit"),
-            flt(yesterday_s.get("profit")), profit_spark, currency=True, click="profit-yesterday"),
+            flt(yesterday_s.get("profit")), profit_spark, currency=True,
+            pct=vs7.get("profit_pct"), prev=avg7.get("profit"), click="profit-yesterday"),
         kpi("receivables", "incoming", _("Open Receivables"),
             flt((cash or {}).get("receivables")), ar_spark, currency=True, click="receivables"),
         kpi("inventory-value", "package", _("Inventory Value"),
-            flt((inventory or {}).get("total_value")), val_spark, currency=True, click="inventory-value"),
+            flt((inventory or {}).get("total_value")), val_spark, currency=True,
+            pct=(inventory or {}).get("change_pct"), prev=(inventory or {}).get("prev_value"), click="inventory-value"),
         kpi("cash-balance", "wallet", _("Cash Balance"),
-            flt((cash or {}).get("total")), cash_spark, currency=True, click="cash"),
+            flt((cash or {}).get("total")), cash_spark, currency=True,
+            pct=(cash or {}).get("change_pct_7d"), prev=(cash or {}).get("prev_total"), click="cash"),
         kpi("po-pending", "shopping-cart", _("Purchase Orders Pending"),
             int(pos.get("count") or 0), po_spark, count=True, click="pending-pos"),
         kpi("so-pending", "file-text", _("Sales Orders Pending"),
@@ -1853,6 +2057,82 @@ def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
         kpi("low-stock", "alert-triangle", _("Low Stock Items"),
             int(low.get("count") or 0), stock_spark, count=True, click="low-stock"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Business health (Nexora Intelligence Center)
+# ---------------------------------------------------------------------------
+def _cogs_30d(company, today):
+    try:
+        row = frappe.db.sql(
+            """
+            SELECT IFNULL(SUM(IFNULL(sii.qty, 0) * IFNULL(it.valuation_rate, 0)), 0) AS cogs
+            FROM `tabSales Invoice Item` sii
+            INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+            LEFT JOIN `tabItem` it ON it.name = sii.item_code
+            WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+              AND IFNULL(it.is_stock_item, 1) = 1
+            """,
+            (company, add_days(today, -29), today),
+            as_dict=True,
+        )
+        return flt(row[0]["cogs"], 2)
+    except Exception:
+        return 0
+
+
+def _health_score(recv_overdue, pay_overdue, recv_total, pay_total, cash_now, turnover_30d):
+    score = 100
+    if recv_total and flt(recv_overdue) / recv_total > 0.3:
+        score -= 15
+    if pay_total and flt(pay_overdue) / pay_total > 0.3:
+        score -= 10
+    if flt(cash_now) < 0:
+        score -= 20
+    if turnover_30d < 0.3:
+        score -= 10
+    return max(0, min(100, int(score)))
+
+
+def _business_health(company, today, sales, cash, inventory, series):
+    recv_total = flt((cash or {}).get("receivables") or 0)
+    recv_detail = (cash or {}).get("receivables_detail") or {}
+    recv_overdue = flt(recv_detail.get("overdue") or 0)
+    ar_series = series.get("ar") or []
+    ar_start = ar_series[0].get("amount", 0) if ar_series else 0
+    recv_trend = flt((recv_total - ar_start) / abs(ar_start) * 100, 1) if ar_start else 0
+
+    pay_total = flt((cash or {}).get("payables") or 0)
+    pay_detail = (cash or {}).get("payables_detail") or {}
+    pay_overdue = flt(pay_detail.get("overdue") or 0)
+    ap_series = series.get("ap") or []
+    ap_start = ap_series[0].get("amount", 0) if ap_series else 0
+    pay_trend = flt((pay_total - ap_start) / abs(ap_start) * 100, 1) if ap_start else 0
+
+    cogs = _cogs_30d(company, today)
+    avg_inv = flt((inventory or {}).get("total_value") or 0)
+    turnover_30d = flt(cogs / avg_inv, 2) if avg_inv else 0
+
+    cash_now = flt((cash or {}).get("total") or 0)
+    cs = series.get("cash") or []
+    cash_30d_ago = cs[0].get("amount", cash_now) if cs else cash_now
+    cash_flow = flt(cash_now - cash_30d_ago, 2)
+    cash_flow_avg = flt(cash_flow / 30, 2) if len(cs) > 1 else 0
+
+    score = _health_score(recv_overdue, pay_overdue, recv_total, pay_total, cash_now, turnover_30d)
+
+    return {
+        "receivables": {"total": recv_total, "overdue": recv_overdue, "trend_pct": recv_trend},
+        "payables": {"total": pay_total, "overdue": pay_overdue, "trend_pct": pay_trend},
+        "inventory_turnover": {
+            "cogs_30d": cogs, "avg_value": avg_inv,
+            "turnover_30d": turnover_30d, "annualized": flt(turnover_30d * 12, 2),
+        },
+        "cash_flow": {"net_30d": cash_flow, "avg_daily": cash_flow_avg, "current": cash_now},
+        "net_position": flt((cash or {}).get("net_position") or 0),
+        "score": score,
+        "as_at": today,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1924,17 +2204,51 @@ def _recent_activity(company):
     if frappe.db.table_exists("Payment Entry"):
         pes = frappe.db.sql(
             """
-            SELECT name, party, paid_amount, creation FROM `tabPayment Entry`
+            SELECT name, party, payment_type, paid_amount, creation FROM `tabPayment Entry`
             WHERE docstatus = 1 AND company = %s ORDER BY creation DESC LIMIT 4
             """,
             (company,),
             as_dict=True,
         )
         for r in pes:
-            push("payment", "wallet", "green", r["name"], _("{0} · {1}").format(r["name"], r.get("party") or ""), r["paid_amount"], r["creation"])
+            push("payment", "wallet", "green", r["name"],
+                 _("{0} · {1}").format(r["name"], r.get("party") or ""),
+                 r["paid_amount"], r["creation"])
+
+    if frappe.db.table_exists("Delivery Note"):
+        dns = frappe.db.sql(
+            """
+            SELECT dn.name, IFNULL(c.customer_name, dn.customer_name) AS party,
+                   dn.grand_total, dn.creation
+            FROM `tabDelivery Note` dn
+            LEFT JOIN `tabCustomer` c ON c.name = dn.customer
+            WHERE dn.docstatus = 1 AND dn.company = %s
+            ORDER BY dn.creation DESC LIMIT 4
+            """,
+            (company,),
+            as_dict=True,
+        )
+        for r in dns:
+            push("delivery", "truck", "indigo", r["name"],
+                 _("{0} · {1}").format(r["name"], r.get("party") or ""),
+                 r["grand_total"], r["creation"])
+
+    if frappe.db.table_exists("Stock Entry"):
+        mrs = frappe.db.sql(
+            """
+            SELECT name, purpose, creation FROM `tabStock Entry`
+            WHERE docstatus = 1 AND company = %s AND purpose = 'Material Receipt'
+            ORDER BY creation DESC LIMIT 4
+            """,
+            (company,),
+            as_dict=True,
+        )
+        for r in mrs:
+            push("material-receipt", "package", "teal", r["name"],
+                 _("{0} · Material Receipt").format(r["name"]), 0, r["creation"])
 
     out.sort(key=lambda x: x["ts"], reverse=True)
-    return out[:12]
+    return out[:14]
 
 
 def _build_alerts(sales, cash, purchasing, inventory, moving, pricing):
@@ -1966,18 +2280,40 @@ def _build_alerts(sales, cash, purchasing, inventory, moving, pricing):
             "click": "out-of-stock",
         })
 
-    slow = moving.get("slow") or []
-    if slow:
-        dead_value = sum(flt(i.get("qty")) * flt(i.get("valuation_rate")) for i in slow)
+    dead_count = (moving or {}).get("dead_stock_count") or 0
+    if dead_count:
+        dead_items = (moving or {}).get("dead_stock") or []
         alerts.append({
-            "kind": "dead-stock", "icon": "clock", "color": "gray",
-            "label": _("Slow Moving"), "count": len(slow),
-            "amount": dead_value, "sub": _("no sales in 90 days"),
+            "kind": "zero-movement", "icon": "clock", "color": "gray",
+            "label": _("Zero Movement"), "count": int(dead_count),
+            "amount": flt(sum(flt(i.get("stock_value")) for i in dead_items), 2),
+            "sub": _("no sales in the last 30 days"),
             "items": [
-                {"name": i.get("item_name") or i.get("item_code"), "value": flt(i.get("qty")), "note": _("units idle")}
-                for i in slow[:3]
+                {"name": i.get("item_name") or i.get("item_code"), "value": flt(i.get("stock_value"), 2), "note": _("idle value")}
+                for i in dead_items[:3]
             ],
             "click": "slow-moving",
+        })
+
+    vs7 = (sales or {}).get("yesterday_vs_7d") or {}
+    amt_pct = vs7.get("amount_pct")
+    if amt_pct is not None and amt_pct <= -15:
+        alerts.append({
+            "kind": "sales-drop", "icon": "trending-down", "color": "red",
+            "label": _("Sales Drop"), "count": 1,
+            "amount": flt((sales or {}).get("yesterday", {}).get("amount") or 0),
+            "sub": _("yesterday {0}% below the 7-day average").format(flt(amt_pct, 1)),
+            "items": [], "click": "sales-yesterday",
+        })
+
+    cch = (cash or {}).get("change_pct_7d")
+    if cch is not None and cch < 0:
+        alerts.append({
+            "kind": "cash-trend", "icon": "wallet", "color": "orange",
+            "label": _("Cash Declining"), "count": 1,
+            "amount": flt((cash or {}).get("total")),
+            "sub": _("down {0}% over the last 14 days").format(abs(flt(cch, 1))),
+            "items": [], "click": "cash",
         })
 
     pr = pricing or {}
@@ -2002,6 +2338,20 @@ def _build_alerts(sales, cash, purchasing, inventory, moving, pricing):
             "items": [], "click": "receivables",
         })
 
+    recv_detail = (cash or {}).get("receivables_detail") or {}
+    recv_overdue = flt(recv_detail.get("overdue") or 0)
+    if recv_overdue and recv_detail.get("overdue_count"):
+        alerts.append({
+            "kind": "receivables-overdue", "icon": "incoming", "color": "red",
+            "label": _("Overdue Receivables"), "count": int(recv_detail["overdue_count"]),
+            "amount": recv_overdue, "sub": _("invoices past due date"),
+            "items": [
+                {"name": i.get("customer_name") or i.get("customer"), "value": flt(i.get("overdue"), 2), "note": _("overdue")}
+                for i in (recv_detail.get("top") or [])[:3]
+            ],
+            "click": "receivables",
+        })
+
     pay = flt((cash or {}).get("payables"))
     if pay:
         alerts.append({
@@ -2009,6 +2359,29 @@ def _build_alerts(sales, cash, purchasing, inventory, moving, pricing):
             "label": _("Payables"), "count": 1,
             "amount": pay, "sub": _("supplier outstanding"),
             "items": [], "click": "payables",
+        })
+
+    crit = (inventory or {}).get("critical_count") or 0
+    if crit:
+        out = inventory.get("out_of_stock") or {}
+        alerts.append({
+            "kind": "inventory-shortage", "icon": "package", "color": "red",
+            "label": _("Inventory Shortage"), "count": int(crit),
+            "amount": 0, "sub": _("critical / out-of-stock items"),
+            "items": [
+                {"name": i.get("item_name") or i.get("item_code"), "value": flt(i.get("qty"), 2), "note": _("on hand")}
+                for i in (out.get("items") or [])[:3]
+            ],
+            "click": "low-stock",
+        })
+
+    delay = flt((purchasing or {}).get("pending_pos", {}).get("avg_delay_days") or 0)
+    if delay > 0:
+        alerts.append({
+            "kind": "supplier-delay", "icon": "clock", "color": "orange",
+            "label": _("Supplier Delays"), "count": 1,
+            "amount": 0, "sub": _("open POs averaging {0} days past schedule").format(flt(delay, 1)),
+            "items": [], "click": "pending-pos",
         })
 
     pos = (purchasing or {}).get("pending_pos") or {}
@@ -2041,15 +2414,16 @@ def _build_payload(company):
 
     series = _safe(lambda: _kpi_series(company, today), {}, "series")
     sales = _safe(lambda: _build_sales(company, today, yesterday), {}, "sales")
-    cash = _safe(lambda: _cash_position(company, today, series.get("cash")), {}, "cash")
+    cash = _safe(lambda: _cash_position(company, today, series), {}, "cash")
     purchasing = _safe(lambda: _purchase_performance(company, today), {}, "purchasing")
-    inventory = _safe(lambda: _inventory_health(company), {}, "inventory")
-    moving = _safe(lambda: _fast_slow_moving(company, today), {}, "moving")
+    inventory = _safe(lambda: _inventory_health(company, today, series=series.get("value")), {}, "inventory")
+    moving = _safe(lambda: _inventory_intelligence(company, today), {}, "moving")
     rates = _safe(lambda: _exchange_rates(company), {}, "exchange_rates")
     pricing = _safe(lambda: _pricing_alerts(company), {"count": 0, "items": [], "impact": 0}, "pricing")
     notifications = _safe(lambda: _notifications(), {"unread": 0, "recent": []}, "notifications")
     activity = _safe(lambda: _recent_activity(company), [], "activity")
-    sos = _safe(lambda: _sales_orders_pending(company), {"count": 0, "amount": 0}, "sos")
+    sos = _safe(lambda: _sales_orders_pending(company, today), {"count": 0, "amount": 0, "avg_age_days": 0}, "sos")
+    health = _safe(lambda: _business_health(company, today, sales, cash, inventory, series), {}, "business_health")
     alerts = _safe(lambda: _build_alerts(sales, cash, purchasing, inventory, moving, pricing), [], "alerts")
     kpis = _safe(lambda: _build_kpis(company, sales, cash, inventory, purchasing, sos, series), [], "kpis")
 
@@ -2072,4 +2446,5 @@ def _build_payload(company):
         "alerts": alerts,
         "sos": sos,
         "kpis": kpis,
+        "business_health": health,
     }
