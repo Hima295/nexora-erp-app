@@ -1044,6 +1044,11 @@ window.NexoraDashboard.DataTable = (function () {
     function fitScroll(S) {
         var sc = S.frame.querySelector("[data-dt-scroll]");
         if (!sc) return;
+        if (S.noFit) {
+            sc.style.height = "";
+            sc.style.maxHeight = "";
+            return;
+        }
         var top = S.frame.getBoundingClientRect().top;
         var h = window.innerHeight - top - 56;
         sc.style.height = Math.max(180, Math.floor(h)) + "px";
@@ -1150,6 +1155,7 @@ window.NexoraDashboard.DataTable = (function () {
         var S = {
             nx: nx,
             frame: frame,
+            noFit: !!opts.noFit,
             reportName: opts.reportName || "",
             rows: table.rows,
             all: table.rows.map(function (r, i) { return { r: r, i: i }; }),
