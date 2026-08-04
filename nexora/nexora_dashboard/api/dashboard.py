@@ -56,6 +56,13 @@ def _safe(fn, default, key):
         return default
 
 
+def _pct(cur, prev):
+    """Percentage change helper (avoids division by zero)."""
+    if prev:
+        return flt((cur - prev) / abs(prev) * 100, 1)
+    return flt(100, 1) if cur else 0
+
+
 # ---------------------------------------------------------------------------
 # Sales / Profit
 # ---------------------------------------------------------------------------
@@ -91,13 +98,29 @@ def _profit_stats(company, start, end):
     return flt(row[0]["profit"], 2)
 
 
+def _sales_qty(company, start, end):
+    row = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(IFNULL(sii.qty, 0)), 0) AS qty
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1 AND si.company = %s AND si.posting_date BETWEEN %s AND %s
+        """,
+        (company, start, end),
+        as_dict=True,
+    )
+    return flt(row[0]["qty"], 2)
+
+
 def _build_sales(company, today, yesterday):
     month_start = getdate(today).replace(day=1)
     prev_month_start = getdate(add_months(month_start, -1))
     prev_month_end = getdate(add_days(month_start, -1))
+    prev_day = add_days(yesterday, -1)
 
     today_s = _sales_stats(company, today, today)
     yesterday_s = _sales_stats(company, yesterday, yesterday)
+    prev_day_s = _sales_stats(company, prev_day, prev_day)
     month_s = _sales_stats(company, month_start, today)
     prev_s = _sales_stats(company, prev_month_start, prev_month_end)
 
@@ -108,27 +131,49 @@ def _build_sales(company, today, yesterday):
 
     profit_today = _profit_stats(company, today, today)
     profit_yesterday = _profit_stats(company, yesterday, yesterday)
+    profit_prev_day = _profit_stats(company, prev_day, prev_day)
     profit_month = _profit_stats(company, month_start, today)
     profit_prev = _profit_stats(company, prev_month_start, prev_month_end)
+
+    qty_today = _sales_qty(company, today, today)
+    qty_yesterday = _sales_qty(company, yesterday, yesterday)
+    qty_prev_day = _sales_qty(company, prev_day, prev_day)
+    qty_month = _sales_qty(company, month_start, today)
+    qty_prev = _sales_qty(company, prev_month_start, prev_month_end)
 
     trend = _daily_trend(company, add_days(today, -29), today)
 
     top_items = _top_items(company, add_days(today, -29), today)
     top_customers = _top_customers(company, add_days(today, -29), today)
 
+    def avg(d):
+        return flt(d["amount"] / d["count"], 2) if d["count"] else 0
+
     return {
-        "today": {"amount": today_s["amount"], "count": today_s["count"], "profit": profit_today},
-        "yesterday": {"amount": yesterday_s["amount"], "count": yesterday_s["count"], "profit": profit_yesterday},
+        "today": {"amount": today_s["amount"], "count": today_s["count"], "profit": profit_today, "qty": qty_today},
+        "yesterday": {"amount": yesterday_s["amount"], "count": yesterday_s["count"], "profit": profit_yesterday, "qty": qty_yesterday},
+        "prev_day": {"amount": prev_day_s["amount"], "count": prev_day_s["count"], "profit": profit_prev_day, "qty": qty_prev_day},
         "today_vs_yesterday": {
             "change_pct": pct(today_s["amount"], yesterday_s["amount"]),
             "profit_change_pct": pct(profit_today, profit_yesterday),
         },
+        "yesterday_change": {
+            "amount_pct": pct(yesterday_s["amount"], prev_day_s["amount"]),
+            "count_pct": pct(yesterday_s["count"], prev_day_s["count"]),
+            "profit_pct": pct(profit_yesterday, profit_prev_day),
+            "qty_pct": pct(qty_yesterday, qty_prev_day),
+            "avg_pct": pct(avg(yesterday_s), avg(prev_day_s)),
+        },
+        "yesterday_avg_invoice": avg(yesterday_s),
+        "prev_avg_invoice": avg(prev_day_s),
         "month": {
             "amount": month_s["amount"],
             "count": month_s["count"],
             "profit": profit_month,
+            "qty": qty_month,
             "prev_amount": prev_s["amount"],
             "prev_profit": profit_prev,
+            "prev_qty": qty_prev,
             "change_pct": pct(month_s["amount"], prev_s["amount"]),
         },
         "trend": trend,
@@ -147,7 +192,8 @@ def _daily_trend(company, start, end):
                    CASE WHEN IFNULL(it.is_stock_item, 1) = 1
                         THEN IFNULL(sii.qty, 0) * (IFNULL(sii.net_rate, 0) - IFNULL(it.valuation_rate, 0))
                         ELSE 0 END
-               ), 0) AS profit
+               ), 0) AS profit,
+               IFNULL(SUM(IFNULL(sii.qty, 0)), 0) AS qty
         FROM `tabSales Invoice` si
         LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
         LEFT JOIN `tabItem` it ON it.name = sii.item_code
@@ -169,6 +215,7 @@ def _daily_trend(company, start, end):
             "amount": flt(r["amount"], 2) if r else 0,
             "count": int(r["count"]) if r else 0,
             "profit": flt(r["profit"], 2) if r else 0,
+            "qty": flt(r["qty"], 2) if r else 0,
         })
         cur = add_days(cur, 1)
     return out
@@ -220,7 +267,57 @@ def _top_customers(company, start, end, limit=10):
 # ---------------------------------------------------------------------------
 # Cash / Receivables / Payables
 # ---------------------------------------------------------------------------
-def _cash_position(company):
+def _asof_series(company, today, account_types, days=14):
+    """Daily running balance series for a set of account types (GL-backed)."""
+    accounts = frappe.db.sql(
+        """
+        SELECT name FROM `tabAccount`
+        WHERE company = %s AND is_group = 0 AND disabled = 0
+          AND account_type IN ({0})
+        """.format(",".join(["%s"] * len(account_types))),
+        (company,) + tuple(account_types),
+        pluck=True,
+    )
+    if not accounts:
+        return []
+    ph = ",".join(["%s"] * len(accounts))
+    start = add_days(today, -(days - 1))
+
+    base = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(IFNULL(debit, 0) - IFNULL(credit, 0)), 0) AS bal
+        FROM `tabGL Entry`
+        WHERE company = %s AND account IN ({0}) AND posting_date < %s
+          AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
+        """.format(ph),
+        (company,) + tuple(accounts) + (start,),
+    )[0][0]
+
+    rows = frappe.db.sql(
+        """
+        SELECT posting_date AS d, SUM(IFNULL(debit, 0) - IFNULL(credit, 0)) AS net
+        FROM `tabGL Entry`
+        WHERE company = %s AND account IN ({0}) AND posting_date BETWEEN %s AND %s
+          AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
+        GROUP BY posting_date
+        ORDER BY posting_date
+        """.format(ph),
+        (company,) + tuple(accounts) + (start, today),
+        as_dict=True,
+    )
+    by_date = {r["d"]: flt(r["net"]) for r in rows}
+    out = []
+    cur = getdate(start)
+    bal = flt(base)
+    while cur <= getdate(today):
+        bal += by_date.get(cur, 0)
+        out.append({"date": str(cur), "amount": flt(bal, 2)})
+        cur = add_days(cur, 1)
+    return out
+
+
+def _cash_position(company, today=None, cash_series=None):
+    today = today or nowdate()
     accounts = frappe.db.sql(
         """
         SELECT a.name, a.account_type, a.account_currency,
@@ -247,13 +344,27 @@ def _cash_position(company):
         (company,),
     )[0][0]
 
+    series = cash_series if cash_series is not None else _asof_series(company, today, ("Cash", "Bank"))
+    ar_series = _asof_series(company, today, ("Receivable",))
+    ap_series = _asof_series(company, today, ("Payable",))
+    total = flt(cash + bank, 2)
+    prev_total = series[0]["amount"] if len(series) > 1 else None
+    change_pct_7d = None
+    if prev_total:
+        change_pct_7d = flt((total - prev_total) / abs(prev_total) * 100, 1) if prev_total else None
+
     return {
         "cash": flt(cash, 2),
         "bank": flt(bank, 2),
-        "total": flt(cash + bank, 2),
+        "total": total,
         "receivables": flt(recv, 2),
         "payables": flt(pay, 2),
         "net_position": flt(cash + bank - pay + recv, 2),
+        "prev_total": flt(prev_total, 2) if prev_total is not None else 0,
+        "change_pct_7d": change_pct_7d,
+        "series": series,
+        "ar_series": ar_series,
+        "ap_series": ap_series,
         "accounts": [
             {"name": a["name"], "account_type": a["account_type"], "balance": flt(a["balance"], 2)}
             for a in accounts
@@ -322,6 +433,104 @@ def _purchase_requests(company):
         as_dict=True,
     )
     return {"available": True, "count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+
+
+def _sales_orders_pending(company):
+    if not frappe.db.table_exists("Sales Order"):
+        return {"count": 0, "amount": 0}
+    row = frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(grand_total), 0) AS amount, COUNT(*) AS count
+        FROM `tabSales Order`
+        WHERE docstatus = 0 AND company = %s
+        """,
+        (company,),
+        as_dict=True,
+    )
+    return {"count": int(row[0]["count"] or 0), "amount": flt(row[0]["amount"], 2)}
+
+
+def _doc_series(company, today, doctype, days=14, docstatus=0):
+    """Daily creation count series for a doctype (draft by default)."""
+    if not frappe.db.table_exists(doctype):
+        return []
+    start = add_days(today, -(days - 1))
+    rows = frappe.db.sql(
+        """
+        SELECT DATE(creation) AS d, COUNT(*) AS count
+        FROM `tab{0}`
+        WHERE docstatus = %s AND company = %s AND creation >= %s
+        GROUP BY DATE(creation)
+        """.format(doctype),
+        (docstatus, company, str(start)),
+        as_dict=True,
+    )
+    by_date = {r["d"]: int(r["count"]) for r in rows}
+    out = []
+    cur = getdate(start)
+    while cur <= getdate(today):
+        out.append({"date": str(cur), "count": by_date.get(cur, 0)})
+        cur = add_days(cur, 1)
+    return out
+
+
+def _stockout_series(company, today, days=14):
+    """Daily count of negative stock-ledger movements (stockout events)."""
+    start = add_days(today, -(days - 1))
+    rows = frappe.db.sql(
+        """
+        SELECT posting_date AS d, COUNT(*) AS count
+        FROM `tabStock Ledger Entry`
+        WHERE company = %s AND actual_qty < 0 AND posting_date BETWEEN %s AND %s
+          AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
+        GROUP BY posting_date ORDER BY posting_date
+        """,
+        (company, start, today),
+        as_dict=True,
+    )
+    by_date = {r["d"]: int(r["count"]) for r in rows}
+    out = []
+    cur = getdate(start)
+    while cur <= getdate(today):
+        out.append({"date": str(cur), "count": by_date.get(cur, 0)})
+        cur = add_days(cur, 1)
+    return out
+
+
+def _inventory_value_series(company, today, days=14):
+    """Daily inventory value reconstructed backwards from current Bin valuation."""
+    start = add_days(today, -(days - 1))
+    current = flt(frappe.db.sql(
+        """
+        SELECT IFNULL(SUM(IFNULL(b.actual_qty, 0) * IFNULL(it.valuation_rate, 0)), 0)
+        FROM `tabBin` b
+        INNER JOIN `tabItem` it ON it.name = b.item_code
+        WHERE it.disabled = 0 AND IFNULL(it.is_stock_item, 1) = 1
+        """,
+    )[0][0])
+    rows = frappe.db.sql(
+        """
+        SELECT posting_date AS d, SUM(IFNULL(actual_qty, 0) * IFNULL(valuation_rate, 0)) AS delta
+        FROM `tabStock Ledger Entry`
+        WHERE company = %s AND posting_date BETWEEN %s AND %s
+          AND docstatus < 2 AND IFNULL(is_cancelled, 0) = 0
+        GROUP BY posting_date ORDER BY posting_date
+        """,
+        (company, start, today),
+        as_dict=True,
+    )
+    by_date = {r["d"]: flt(r["delta"]) for r in rows}
+    days_list = []
+    cur = getdate(today)
+    while cur >= getdate(start):
+        days_list.append(cur)
+        cur = add_days(cur, -1)
+    rev = []
+    bal = current
+    for d in reversed(days_list):
+        rev.append((d, bal))
+        bal -= by_date.get(d, 0)
+    return [{"date": str(d), "amount": flt(v, 2)} for d, v in reversed(rev)]
 
 
 def _top_suppliers(company, start, end, limit=10):
@@ -459,7 +668,8 @@ def _fast_slow_moving(company, today):
             for r in fast
         ],
         "slow": [
-            {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2)}
+            {"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"], 2),
+             "valuation_rate": flt(r["valuation_rate"], 2)}
             for r in slow[:10]
         ],
     }
@@ -1576,6 +1786,244 @@ def shipment_api(method="get", name=None, company=None, payload=None):
 # ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# KPI sparklines (Nexora Intelligence Center - Phase 1)
+# ---------------------------------------------------------------------------
+def _kpi_series(company, today):
+    days = 14
+    return {
+        "cash": _asof_series(company, today, ("Cash", "Bank"), days),
+        "ar": _asof_series(company, today, ("Receivable",), days),
+        "value": _inventory_value_series(company, today, days),
+        "po": _doc_series(company, today, "Purchase Order", days),
+        "so": _doc_series(company, today, "Sales Order", days),
+        "stockout": _stockout_series(company, today, days),
+    }
+
+
+def _build_kpis(company, sales, cash, inventory, purchasing, sos, series):
+    trend = sales.get("trend") or []
+    yesterday_s = (sales.get("yesterday") or {})
+    pos = (purchasing or {}).get("pending_pos") or {}
+    low = (inventory or {}).get("low_stock") or {}
+
+    sales_spark = [flt(r.get("amount"), 2) for r in trend[-15:-1]]
+    profit_spark = [flt(r.get("profit"), 2) for r in trend[-15:-1]]
+    cash_spark = [flt(r.get("amount"), 2) for r in (series.get("cash") or [])]
+    ar_spark = [flt(r.get("amount"), 2) for r in (series.get("ar") or [])]
+    val_spark = [flt(r.get("amount"), 2) for r in (series.get("value") or [])]
+    po_spark = [flt(r.get("count"), 2) for r in (series.get("po") or [])]
+    so_spark = [flt(r.get("count"), 2) for r in (series.get("so") or [])]
+    stock_spark = [flt(r.get("count"), 2) for r in (series.get("stockout") or [])]
+
+    def kpi(key, icon, title, value, spark, currency=False, count=False, click=None):
+        pct = prev = None
+        if len(spark) >= 2:
+            prev = spark[-2]
+            cur = spark[-1]
+            pct = _pct(cur, prev)
+        return {
+            "key": key,
+            "icon": icon,
+            "title": title,
+            "value": flt(value, 2) if currency else (int(value) if count else flt(value, 2)),
+            "currency": bool(currency),
+            "count": bool(count),
+            "pct": pct,
+            "prev": flt(prev, 2) if prev is not None else None,
+            "spark": spark,
+            "click": click or key,
+        }
+
+    return [
+        kpi("yesterday-sales", "trending-up", _("Yesterday Sales"),
+            flt(yesterday_s.get("amount")), sales_spark, currency=True, click="sales-yesterday"),
+        kpi("yesterday-profit", "activity", _("Yesterday Profit"),
+            flt(yesterday_s.get("profit")), profit_spark, currency=True, click="profit-yesterday"),
+        kpi("receivables", "incoming", _("Open Receivables"),
+            flt((cash or {}).get("receivables")), ar_spark, currency=True, click="receivables"),
+        kpi("inventory-value", "package", _("Inventory Value"),
+            flt((inventory or {}).get("total_value")), val_spark, currency=True, click="inventory-value"),
+        kpi("cash-balance", "wallet", _("Cash Balance"),
+            flt((cash or {}).get("total")), cash_spark, currency=True, click="cash"),
+        kpi("po-pending", "shopping-cart", _("Purchase Orders Pending"),
+            int(pos.get("count") or 0), po_spark, count=True, click="pending-pos"),
+        kpi("so-pending", "file-text", _("Sales Orders Pending"),
+            int((sos or {}).get("count") or 0), so_spark, count=True, click="sales-orders"),
+        kpi("low-stock", "alert-triangle", _("Low Stock Items"),
+            int(low.get("count") or 0), stock_spark, count=True, click="low-stock"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Recent activity / Business alerts (Nexora Intelligence Center)
+# ---------------------------------------------------------------------------
+def _recent_activity(company):
+    out = []
+
+    def push(rtype, icon, color, name, title, amount, ts):
+        out.append({
+            "type": rtype, "icon": icon, "color": color, "name": name,
+            "title": title, "amount": flt(amount, 2), "ts": str(ts or ""),
+        })
+
+    sis = frappe.db.sql(
+        """
+        SELECT si.name, IFNULL(c.customer_name, si.customer_name) AS party,
+               si.grand_total, si.creation
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        WHERE si.docstatus = 1 AND si.company = %s
+        ORDER BY si.creation DESC LIMIT 5
+        """,
+        (company,),
+        as_dict=True,
+    )
+    for r in sis:
+        push("sales", "file", "blue", r["name"], _("{0} · {1}").format(r["name"], r.get("party") or ""), r["grand_total"], r["creation"])
+
+    pis = frappe.db.sql(
+        """
+        SELECT pi.name, IFNULL(s.supplier_name, pi.supplier_name) AS party,
+               pi.grand_total, pi.creation
+        FROM `tabPurchase Invoice` pi
+        LEFT JOIN `tabSupplier` s ON s.name = pi.supplier
+        WHERE pi.docstatus = 1 AND pi.company = %s
+        ORDER BY pi.creation DESC LIMIT 4
+        """,
+        (company,),
+        as_dict=True,
+    )
+    for r in pis:
+        push("purchase", "cart", "orange", r["name"], _("{0} · {1}").format(r["name"], r.get("party") or ""), r["grand_total"], r["creation"])
+
+    if frappe.db.table_exists("Purchase Order"):
+        pos = frappe.db.sql(
+            """
+            SELECT name, supplier, grand_total, creation FROM `tabPurchase Order`
+            WHERE docstatus = 0 AND company = %s ORDER BY creation DESC LIMIT 4
+            """,
+            (company,),
+            as_dict=True,
+        )
+        for r in pos:
+            push("po", "cart", "purple", r["name"], _("{0} (draft)").format(r["name"]), r["grand_total"], r["creation"])
+
+    if frappe.db.table_exists("Stock Entry"):
+        ses = frappe.db.sql(
+            """
+            SELECT name, purpose, creation FROM `tabStock Entry`
+            WHERE docstatus = 1 AND company = %s ORDER BY creation DESC LIMIT 4
+            """,
+            (company,),
+            as_dict=True,
+        )
+        for r in ses:
+            push("stock", "box", "teal", r["name"], _("{0} · {1}").format(r["name"], r.get("purpose") or ""), 0, r["creation"])
+
+    if frappe.db.table_exists("Payment Entry"):
+        pes = frappe.db.sql(
+            """
+            SELECT name, party, paid_amount, creation FROM `tabPayment Entry`
+            WHERE docstatus = 1 AND company = %s ORDER BY creation DESC LIMIT 4
+            """,
+            (company,),
+            as_dict=True,
+        )
+        for r in pes:
+            push("payment", "wallet", "green", r["name"], _("{0} · {1}").format(r["name"], r.get("party") or ""), r["paid_amount"], r["creation"])
+
+    out.sort(key=lambda x: x["ts"], reverse=True)
+    return out[:12]
+
+
+def _build_alerts(sales, cash, purchasing, inventory, moving, pricing):
+    alerts = []
+
+    low = inventory.get("low_stock") or {}
+    if low.get("count"):
+        alerts.append({
+            "kind": "low-stock", "icon": "alert", "color": "orange",
+            "label": _("Low Stock"), "count": int(low["count"]),
+            "amount": 0, "sub": _("items below reorder level"),
+            "items": [
+                {"name": i.get("item_name") or i.get("item_code"), "value": i.get("qty"), "note": _("on hand")}
+                for i in (low.get("items") or [])[:3]
+            ],
+            "click": "low-stock",
+        })
+
+    out = inventory.get("out_of_stock") or {}
+    if out.get("count"):
+        alerts.append({
+            "kind": "out-of-stock", "icon": "out", "color": "red",
+            "label": _("Out of Stock"), "count": int(out["count"]),
+            "amount": 0, "sub": _("unavailable items"),
+            "items": [
+                {"name": i.get("item_name") or i.get("item_code"), "value": i.get("qty"), "note": _("on hand")}
+                for i in (out.get("items") or [])[:3]
+            ],
+            "click": "out-of-stock",
+        })
+
+    slow = moving.get("slow") or []
+    if slow:
+        dead_value = sum(flt(i.get("qty")) * flt(i.get("valuation_rate")) for i in slow)
+        alerts.append({
+            "kind": "dead-stock", "icon": "clock", "color": "gray",
+            "label": _("Slow Moving"), "count": len(slow),
+            "amount": dead_value, "sub": _("no sales in 90 days"),
+            "items": [
+                {"name": i.get("item_name") or i.get("item_code"), "value": flt(i.get("qty")), "note": _("units idle")}
+                for i in slow[:3]
+            ],
+            "click": "slow-moving",
+        })
+
+    pr = pricing or {}
+    if pr.get("count"):
+        alerts.append({
+            "kind": "pricing", "icon": "tag", "color": "red",
+            "label": _("Margin Review"), "count": int(pr["count"]),
+            "amount": flt(pr.get("impact"), 2), "sub": _("priced at or below cost"),
+            "items": [
+                {"name": i.get("item_name") or i.get("item_code"), "value": i.get("price_list_rate"), "note": _("rate")}
+                for i in (pr.get("items") or [])[:3]
+            ],
+            "click": "pricing",
+        })
+
+    recv = flt((cash or {}).get("receivables"))
+    if recv:
+        alerts.append({
+            "kind": "receivables", "icon": "incoming", "color": "orange",
+            "label": _("Receivables"), "count": 1,
+            "amount": recv, "sub": _("customer outstanding"),
+            "items": [], "click": "receivables",
+        })
+
+    pay = flt((cash or {}).get("payables"))
+    if pay:
+        alerts.append({
+            "kind": "payables", "icon": "outgoing", "color": "purple",
+            "label": _("Payables"), "count": 1,
+            "amount": pay, "sub": _("supplier outstanding"),
+            "items": [], "click": "payables",
+        })
+
+    pos = (purchasing or {}).get("pending_pos") or {}
+    if pos.get("count"):
+        alerts.append({
+            "kind": "pending-pos", "icon": "cart", "color": "blue",
+            "label": _("Pending Purchase Orders"), "count": int(pos["count"]),
+            "amount": flt(pos.get("amount"), 2), "sub": _("awaiting submission"),
+            "items": [], "click": "pending-pos",
+        })
+
+    alerts.sort(key=lambda a: (0 if a["color"] in ("red", "orange") else 1, -a["count"]))
+    return alerts
+
+
 @frappe.whitelist()
 def get_executive_dashboard(company=None):
     _check_permission()
@@ -1591,14 +2039,19 @@ def _build_payload(company):
     today = nowdate()
     yesterday = add_days(today, -1)
 
+    series = _safe(lambda: _kpi_series(company, today), {}, "series")
     sales = _safe(lambda: _build_sales(company, today, yesterday), {}, "sales")
-    cash = _safe(lambda: _cash_position(company), {}, "cash")
+    cash = _safe(lambda: _cash_position(company, today, series.get("cash")), {}, "cash")
     purchasing = _safe(lambda: _purchase_performance(company, today), {}, "purchasing")
     inventory = _safe(lambda: _inventory_health(company), {}, "inventory")
     moving = _safe(lambda: _fast_slow_moving(company, today), {}, "moving")
     rates = _safe(lambda: _exchange_rates(company), {}, "exchange_rates")
     pricing = _safe(lambda: _pricing_alerts(company), {"count": 0, "items": [], "impact": 0}, "pricing")
     notifications = _safe(lambda: _notifications(), {"unread": 0, "recent": []}, "notifications")
+    activity = _safe(lambda: _recent_activity(company), [], "activity")
+    sos = _safe(lambda: _sales_orders_pending(company), {"count": 0, "amount": 0}, "sos")
+    alerts = _safe(lambda: _build_alerts(sales, cash, purchasing, inventory, moving, pricing), [], "alerts")
+    kpis = _safe(lambda: _build_kpis(company, sales, cash, inventory, purchasing, sos, series), [], "kpis")
 
     company_currency = _company_currency(company)
 
@@ -1615,4 +2068,8 @@ def _build_payload(company):
         "exchange_rates": rates,
         "pricing_alerts": pricing,
         "notifications": notifications,
+        "activity": activity,
+        "alerts": alerts,
+        "sos": sos,
+        "kpis": kpis,
     }

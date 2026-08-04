@@ -1,0 +1,30 @@
+{
+ "content": null,
+ "creation": "2026-07-31 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-07-31 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nexora Dashboard",
+ "name": "nexora-dashboard",
+ "owner": "Administrator",
+ "page_name": "nexora-dashboard",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Stock Manager"
+  },
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Accounts Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "title": "Nexora Executive Dashboard"
+}

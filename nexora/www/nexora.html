@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="generator" content="nexora">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/assets/nexora/nexora_dashboard/css/nexora_dashboard.css">
+    <style>
+        html, body { margin: 0; padding: 0; min-height: 100vh; }
+        body.nexora-standalone {
+            background: #0e1424;
+            color: #e9edf7;
+            -webkit-font-smoothing: antialiased;
+        }
+        body.nexora-standalone .nx-root { min-height: 100vh; width: 100%; }
+    </style>
+</head>
+<body class="nexora-standalone">
+    <div id="nx-app"></div>
+
+    <script>
+    (function () {
+        window.frappe = window.frappe || {};
+        window.frappe.boot = window.frappe.boot || {};
+        window.frappe.boot.user = {{ boot_user | safe }};
+        window.frappe.csrf_token = {{ csrf_token | tojson }};
+
+        window.$ = function (sel) {
+            return {
+                get: function () {
+                    return typeof sel === "string" ? document.querySelector(sel) : sel;
+                }
+            };
+        };
+
+        window.frappe.call = function (opts) {
+            opts = opts || {};
+            var method = opts.method || "";
+            var args = opts.args || {};
+            return fetch("/api/method/" + method, {
+                method: "POST",
+                headers: {
+                    "X-Frappe-CSRF-Token": window.frappe.csrf_token || "x",
+                    "Content-Type": "application/json"
+                },
+                credentials: "same-origin",
+                body: JSON.stringify(args || {})
+            }).then(function (res) {
+                return res.json().catch(function () { return { message: null }; }).then(function (data) {
+                    var r = data || {};
+                    if (typeof opts.callback === "function") { opts.callback(r); }
+                    return r;
+                });
+            });
+        };
+
+        window.frappe.require = function (urls) {
+            var list = Array.isArray(urls) ? urls : [urls];
+            var chain = Promise.resolve();
+            list.forEach(function (url) {
+                chain = chain.then(function () {
+                    return new Promise(function (resolve, reject) {
+                        var s = document.createElement("script");
+                        s.src = url;
+                        s.onload = function () { resolve(); };
+                        s.onerror = function () { reject(new Error("Failed to load " + url)); };
+                        document.head.appendChild(s);
+                    });
+                });
+            });
+            return chain;
+        };
+
+        window.frappe.set_route = function (route) {
+            var path = Array.isArray(route) ? route.join("/") : String(route || "");
+            if (path.indexOf("/") !== 0) { path = "/" + path; }
+            window.location.href = path;
+        };
+
+        window.frappe.msgprint = function (msg) { console.warn("[Nexora]", msg); };
+        window.frappe.get_attr = function () { return null; };
+    })();
+    </script>
+
+    <script src="/assets/nexora/nexora_dashboard/js/nexora_dashboard.i18n.js"></script>
+    <script src="/assets/nexora/nexora_dashboard/js/nexora_dashboard.reportx.js"></script>
+    <script src="/assets/nexora/nexora_dashboard/js/nexora_dashboard.datatable.js"></script>
+    <script src="/assets/nexora/nexora_dashboard/js/nexora_dashboard.app.js"></script>
+    <script src="/assets/nexora/nexora_dashboard/js/nexora_dashboard.reports.js"></script>
+    <script>
+    (function () {
+        window.NexoraDashboard = window.NexoraDashboard || {};
+        var mount = document.getElementById("nx-app");
+        if (!mount) { console.error("[Nexora] mount #nx-app not found"); return; }
+        new window.NexoraDashboard.App(mount).init();
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+{
+  "charts": [],
+  "content": "[{\"type\":\"header\",\"data\":{\"text\":\"Nexora Executive Dashboard\",\"level\":3}},{\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Executive Dashboard\",\"link_to\":\"nexora-dashboard\",\"type\":\"Page\",\"label\":\"Open Executive Dashboard\"}}]",
+  "creation": "2026-07-31 20:00:00.000000",
+  "custom_blocks": [],
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "icon": "octicon octicon-graph",
+  "idx": 0,
+  "indicator_color": "cyan",
+  "is_hidden": 0,
+  "label": "Nexora Dashboard Home",
+  "links": [
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Executive Dashboard",
+      "link_count": 0,
+      "link_to": "nexora-dashboard",
+      "link_type": "Page",
+      "onboard": 1,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Sales Invoices",
+      "link_count": 0,
+      "link_to": "Sales Invoice",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Purchase Invoices",
+      "link_count": 0,
+      "link_to": "Purchase Invoice",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Exchange Rates",
+      "link_count": 0,
+      "link_to": "Currency Exchange",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Item Prices",
+      "link_count": 0,
+      "link_to": "Item Price",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
+    }
+  ],
+  "modified": "2026-07-31 20:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Nexora Dashboard",
+  "name": "Nexora Dashboard Home",
+  "number_cards": [],
+  "owner": "Administrator",
+  "public": 1,
+  "roles": [
+    {
+      "role": "System Manager"
+    },
+    {
+      "role": "Stock Manager"
+    },
+    {
+      "role": "Stock User"
+    },
+    {
+      "role": "Accounts Manager"
+    }
+  ],
+  "shortcuts": [
+    {
+      "color": "Cyan",
+      "doc_view": "",
+      "icon": "graph",
+      "label": "Open Executive Dashboard",
+      "link_to": "nexora-dashboard",
+      "type": "Page"
+    }
+  ],
+  "title": "Nexora Dashboard Home"
+}
