@@ -7,7 +7,7 @@ frappe.pages["nexora-dashboard"].on_page_load = function (wrapper) {
 
     var cssLink = document.createElement("link");
     cssLink.rel = "stylesheet";
-    cssLink.href = "/assets/nexora/nexora_dashboard/css/nexora_dashboard.css";
+    cssLink.href = "/assets/nexora/nexora_dashboard/css/nexora_dashboard.css?v=2";
     document.head.appendChild(cssLink);
 
     frappe.require([

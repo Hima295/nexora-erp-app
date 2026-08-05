@@ -34,6 +34,17 @@ window.NexoraDashboard.Reports = (function () {
         ["last_30_days", "Last 30 days"], ["last_90_days", "Last 90 days"],
         ["last_12_months", "Last 12 months"], ["all_time", "All time"]
     ];
+    var PRESET_LABEL = {};
+    PRESETS.forEach(function (p) { PRESET_LABEL[p[0]] = p[1]; });
+    var PRESET_GROUPS = [
+        [["today", "Today"], ["yesterday", "Yesterday"]],
+        [["this_week", "This Week"], ["last_week", "Last Week"]],
+        [["this_month", "This Month"], ["last_month", "Last Month"]],
+        [["this_quarter", "This Quarter"], ["last_quarter", "Last Quarter"]],
+        [["this_year", "This Year"], ["last_year", "Last Year"]],
+        [["last_30_days", "Last 30 Days"], ["last_90_days", "Last 90 Days"], ["last_12_months", "Last 12 Months"]],
+        [["all_time", "All Time"]]
+    ];
     var STATUSES = ["Draft", "Submitted", "Paid", "Unpaid", "Overdue", "Completed", "Closed", "Cancelled", "Pending", "Delivered", "Returned", "Received"];
     var ENTITY_LABELS = {
         customer: "Customer", supplier: "Supplier", warehouse: "Warehouse",
@@ -378,7 +389,7 @@ window.NexoraDashboard.Reports = (function () {
 
     function filtersFromForm(rx) {
         var f = {
-            company: val(rx, "company"), preset: val(rx, "preset") || "custom",
+            company: val(rx, "company"), preset: val(rx, "preset") || (rx.filters && rx.filters.preset) || "custom",
             start: val(rx, "start"), end: val(rx, "end"),
             customer: val(rx, "customer"), supplier: val(rx, "supplier"), warehouse: val(rx, "warehouse"),
             item_group: val(rx, "item_group"), brand: val(rx, "brand"), status: val(rx, "status"), item: val(rx, "item")
@@ -419,6 +430,7 @@ window.NexoraDashboard.Reports = (function () {
                 var favOn = toggleFavorite(fk, reportMetaFor(app, fk));
                 fav.classList.toggle("is-on", favOn);
                 fav.setAttribute("title", app.t(favOn ? "Remove favorite" : "Favorite"));
+                syncMoreCheck(fav, favOn);
                 if (app.state.embed && app.state.embed.rx) { refreshPinBtn(app, rx, fk); }
                 else if (app.renderHub) app.renderHub();
                 return;
@@ -430,6 +442,7 @@ window.NexoraDashboard.Reports = (function () {
                 var shareOn = toggleShared(sk, reportMetaFor(app, sk));
                 share.classList.toggle("is-on", shareOn);
                 share.setAttribute("title", app.t(shareOn ? "Unshare" : "Share"));
+                syncMoreCheck(share, shareOn);
                 if (app.state.embed && app.state.embed.rx) { refreshPinBtn(app, rx, sk); }
                 else if (app.renderHub) app.renderHub();
                 return;
@@ -442,6 +455,7 @@ window.NexoraDashboard.Reports = (function () {
                 var pinOn = togglePin(key, meta);
                 pin.classList.toggle("is-on", pinOn);
                 pin.setAttribute("title", app.t(pinOn ? "Unpin" : "Pin"));
+                syncMoreCheck(pin, pinOn);
                 if (app.state.embed && app.state.embed.rx) { refreshPinBtn(app, rx, key); }
                 else if (app.renderHub) app.renderHub();
                 return;
@@ -1393,19 +1407,38 @@ window.NexoraDashboard.Reports = (function () {
             '<span class="nx-rx-vmeta" data-rx-meta></span>' +
             '<div class="nx-rx-vhead-actions">' +
             '<button class="nx-rx-vact" data-rx-act="filters" title="' + app.esc(app.t("Toggle filters")) + '">' + app.ic("sliders", 15) + "</button>" +
-            '<button class="nx-rx-vact" data-rx-act="refresh" title="' + app.esc(app.t("Refresh report")) + '">' + app.ic("refresh", 15) + "</button>" +
             "</div>" +
             "</div>" +
             '<div class="nx-rx-vpills" data-rx-vpills></div>' +
             "</div>" +
             '<div class="nx-rx-vbar">' +
-            '<button class="nx-rx-vaction" data-rx-act="save" title="' + app.esc(app.t("Save view")) + '">' + app.ic("save", 13) + " " + app.esc(app.t("Save")) + "</button>" +
-            '<button class="nx-rx-vaction' + (isFavorite(key) ? " is-on" : "") + '" data-rx-fav="' + app.esc(key) + '" title="' + app.esc(isFavorite(key) ? app.t("Remove favorite") : app.t("Favorite")) + '">' + app.ic("heart", 13) + " " + app.esc(app.t("Favorite")) + "</button>" +
-            '<button class="nx-rx-vaction' + (isShared(key) ? " is-on" : "") + '" data-rx-share="' + app.esc(key) + '" title="' + app.esc(isShared(key) ? app.t("Unshare") : app.t("Share")) + '">' + app.ic("share", 13) + " " + app.esc(app.t("Share")) + "</button>" +
-            '<button class="nx-rx-vaction' + (isPinned(key) ? " is-on" : "") + '" data-rx-pin="' + app.esc(key) + '" title="' + app.esc(isPinned(key) ? app.t("Unpin") : app.t("Pin to dashboard")) + '">' + app.ic("star", 13) + " " + app.esc(app.t("Pin")) + "</button>" +
+            '<div class="nx-rx-more" data-rx-more>' +
+            '<button class="nx-rx-vaction" data-rx-act="more" title="' + app.esc(app.t("More actions")) + '" aria-haspopup="true" aria-expanded="false">' +
+            app.ic("more-horizontal", 14) + " " + app.esc(app.t("More")) + "</button>" +
+            '<div class="nx-rx-more-pop" data-rx-more-pop hidden role="menu">' +
+            '<button type="button" class="nx-rx-more-item' + (isFavorite(key) ? " is-on" : "") + '" data-rx-fav="' + app.esc(key) + '" title="' + app.esc(isFavorite(key) ? app.t("Remove favorite") : app.t("Favorite")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("heart", 14) + "</span><span>" + app.esc(app.t("Favorite")) + "</span>" +
+            (isFavorite(key) ? '<span class="nx-rx-more-item-check">' + app.ic("check", 12) + "</span>" : "") + "</button>" +
+            '<button type="button" class="nx-rx-more-item' + (isShared(key) ? " is-on" : "") + '" data-rx-share="' + app.esc(key) + '" title="' + app.esc(isShared(key) ? app.t("Unshare") : app.t("Share")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("share", 14) + "</span><span>" + app.esc(app.t("Share")) + "</span>" +
+            (isShared(key) ? '<span class="nx-rx-more-item-check">' + app.ic("check", 12) + "</span>" : "") + "</button>" +
+            '<button type="button" class="nx-rx-more-item' + (isPinned(key) ? " is-on" : "") + '" data-rx-pin="' + app.esc(key) + '" title="' + app.esc(isPinned(key) ? app.t("Unpin") : app.t("Pin to dashboard")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("star", 14) + "</span><span>" + app.esc(app.t("Pin")) + "</span>" +
+            (isPinned(key) ? '<span class="nx-rx-more-item-check">' + app.ic("check", 12) + "</span>" : "") + "</button>" +
+            '<div class="nx-rx-more-sep"></div>' +
+            '<button type="button" class="nx-rx-more-item" data-rx-act="save" title="' + app.esc(app.t("Save view")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("save", 14) + "</span><span>" + app.esc(app.t("Save")) + "</span></button>" +
+            '<button type="button" class="nx-rx-more-item" data-rx-act="refresh" title="' + app.esc(app.t("Refresh report")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("refresh", 14) + "</span><span>" + app.esc(app.t("Refresh")) + "</span></button>" +
+            '<button type="button" class="nx-rx-more-item" data-rx-act="duplicate" title="' + app.esc(app.t("Duplicate this view")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("copy", 14) + "</span><span>" + app.esc(app.t("Duplicate")) + "</span></button>" +
+            '<div class="nx-rx-more-sep"></div>' +
+            '<button type="button" class="nx-rx-more-item" data-rx-act="fullscreen" title="' + app.esc(app.t("Fullscreen")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("maximize", 14) + "</span><span>" + app.esc(app.t("Fullscreen")) + "</span></button>" +
+            '<button type="button" class="nx-rx-more-item is-danger" data-rx-act="reset" title="' + app.esc(app.t("Reset filters")) + '">' +
+            '<span class="nx-rx-more-item-ic">' + app.ic("rotate", 14) + "</span><span>" + app.esc(app.t("Reset")) + "</span></button>" +
+            "</div></div>" +
             '<span class="nx-rx-vaction-grow"></span>' +
-            '<button class="nx-rx-vaction" data-rx-act="fullscreen" title="' + app.esc(app.t("Fullscreen")) + '">' + app.ic("maximize", 13) + " " + app.esc(app.t("Fullscreen")) + "</button>" +
-            '<button class="nx-rx-vaction is-danger" data-rx-act="reset" title="' + app.esc(app.t("Reset filters")) + '">' + app.ic("rotate", 13) + " " + app.esc(app.t("Reset")) + "</button>" +
             "</div>" +
             '<div class="nx-rx-vfilters" data-rx-filterpanel hidden>' +
             '<div class="nx-rx-vfilters-head">' + app.ic("sliders", 13) + " " + app.esc(app.t("Report Filters")) +
@@ -1532,8 +1565,6 @@ window.NexoraDashboard.Reports = (function () {
             '<select class="nx-rx-finput nx-rx-fselect" data-rx-field="company">' + selectOptions(opts.companies, "name", f.company) + "</select></div>";
 
         if (fields.indexOf("date") !== -1) {
-            html += '<div class="nx-rx-frow"><label class="nx-rx-flabel">' + app.esc(app.t("Period")) + "</label>" +
-                '<select class="nx-rx-finput nx-rx-fselect" data-rx-field="preset">' + presetOptions(f.preset) + "</select></div>";
             html += '<div class="nx-rx-frow nx-rx-frow-inline">' +
                 '<label class="nx-rx-flabel">' + app.esc(app.t("From")) + "</label>" +
                 '<input class="nx-rx-finput" type="date" data-rx-field="start" value="' + app.esc(f.start || "") + '" />' +
@@ -1573,14 +1604,199 @@ window.NexoraDashboard.Reports = (function () {
     function renderVPills(app, rx) {
         var wrap = app.main.querySelector("[data-rx-vpills]");
         if (!wrap) return;
-        var f = rx.filters || {};
-        var cur = f.preset || "custom";
-        var html = "";
-        PRESETS.forEach(function (p) {
-            html += '<button class="nx-rx-vpill' + (p[0] === cur ? " is-on" : "") + '" data-rx-vpill="' + p[0] + '">' + app.esc(p[1]) + "</button>";
-        });
-        wrap.innerHTML = html;
+        var cur = (rx.filters && rx.filters.preset) || "custom";
+        var label = presetLabel(cur);
+        wrap.innerHTML = '<div class="nx-rx-datesel" data-rx-datesel>' +
+            '<button type="button" class="nx-rx-datesel-trigger" data-rx-datesel-trigger title="' + app.esc(app.t("Select period")) + '" aria-haspopup="listbox" aria-expanded="false">' +
+            app.ic("calendar", 13) +
+            '<span class="nx-rx-datesel-label" data-rx-datesel-label>' + app.esc(label) + "</span>" +
+            app.ic("chevron-down", 11) +
+            "</button>" +
+            '<div class="nx-rx-datesel-pop" data-rx-datesel-pop hidden role="listbox" aria-label="' + app.esc(app.t("Period")) + '">' +
+            '<div class="nx-rx-datesel-search">' + app.ic("search", 13) +
+            '<input type="text" data-rx-datesel-query autocomplete="off" spellcheck="false" placeholder="' + app.esc(app.t("Search periods…")) + '" aria-label="' + app.esc(app.t("Search periods")) + '" /></div>' +
+            '<div class="nx-rx-datesel-list" data-rx-datesel-list></div>' +
+            "</div></div>";
+        bindDateSel(app, rx, wrap);
     }
+
+    function presetLabel(preset) {
+        if (preset === "custom") return "Custom range";
+        return PRESET_LABEL[preset] || "Custom range";
+    }
+
+    function bindDateSel(app, rx, wrap) {
+        var trigger = wrap.querySelector("[data-rx-datesel-trigger]");
+        var pop = wrap.querySelector("[data-rx-datesel-pop]");
+        var query = wrap.querySelector("[data-rx-datesel-query]");
+        var list = wrap.querySelector("[data-rx-datesel-list]");
+        if (!trigger || !pop) return;
+
+        function cur() { return (rx.filters && rx.filters.preset) || "custom"; }
+
+        function isOpen() { return !pop.hidden; }
+
+        function open() {
+            renderList();
+            pop.hidden = false;
+            trigger.setAttribute("aria-expanded", "true");
+            setTimeout(function () { try { query.focus(); query.select(); } catch (e) {} }, 0);
+        }
+
+        function close() {
+            pop.hidden = true;
+            trigger.setAttribute("aria-expanded", "false");
+        }
+
+        function selectPreset(k) {
+            var r = presetRange(k);
+            var f = rx.filters || {};
+            f.preset = k;
+            f.start = dstr(r[0]);
+            f.end = dstr(r[1]);
+            rx.filters = f;
+            close();
+            syncAfterPeriod(app, rx);
+        }
+
+        function selectCustom() {
+            var f = rx.filters || {};
+            if (!f.start || !f.end) { var r = presetRange("this_month"); f.start = dstr(r[0]); f.end = dstr(r[1]); }
+            rx.filters = f;
+            renderList();
+        }
+
+        function applyCustomRange() {
+            var from = wrap.querySelector("[data-rx-datesel-from]");
+            var to = wrap.querySelector("[data-rx-datesel-to]");
+            if (!from || !to) return;
+            var f = rx.filters || {};
+            f.preset = "custom";
+            f.start = from.value || f.start;
+            f.end = to.value || f.end;
+            rx.filters = f;
+            close();
+            syncAfterPeriod(app, rx);
+        }
+
+        function syncAfterPeriod(app, rx) {
+            var lbl = wrap.querySelector("[data-rx-datesel-label]");
+            if (lbl) lbl.textContent = presetLabel(cur());
+            var ps = app.main.querySelector('[data-rx-field="preset"]');
+            if (ps) ps.value = cur();
+            var s = app.main.querySelector('[data-rx-field="start"]');
+            var en = app.main.querySelector('[data-rx-field="end"]');
+            if (s) s.value = rx.filters.start;
+            if (en) en.value = rx.filters.end;
+            renderVPills(app, rx);
+            if (rx.meta && rx.lastKey) {
+                rx.token++;
+                run(app, rx.lastKey, rx.filters, rx.meta, rx.token);
+            }
+        }
+
+        function itemHtml(k, lbl) {
+            var isCur = k === cur();
+            return '<button type="button" role="option" aria-selected="' + (isCur ? "true" : "false") + '" class="nx-rx-datesel-item' + (isCur ? " is-on" : "") + '" data-rx-datesel-item="' + k + '">' +
+                "<span>" + app.esc(lbl) + "</span>" +
+                (isCur ? app.ic("check", 13) : "") + "</button>";
+        }
+
+        function customItemHtml() {
+            var isCur = cur() === "custom";
+            return '<button type="button" role="option" aria-selected="' + (isCur ? "true" : "false") + '" class="nx-rx-datesel-item nx-rx-datesel-item-custom' + (isCur ? " is-on" : "") + '" data-rx-datesel-item="custom">' +
+                "<span>" + app.esc(app.t("Custom range")) + "…</span>" +
+                (isCur ? app.ic("check", 13) : "") + "</button>";
+        }
+
+        function renderList() {
+            var q = (query.value || "").toLowerCase().trim();
+            var html = "";
+            var any = false;
+            PRESET_GROUPS.forEach(function (g) {
+                var items = g.filter(function (p) { return !q || p[1].toLowerCase().indexOf(q) !== -1; });
+                if (!items.length) return;
+                any = true;
+                html += '<div class="nx-rx-datesel-group">' + items.map(function (p) { return itemHtml(p[0], p[1]); }).join("") + "</div>";
+            });
+            if (!q || ("custom range").indexOf(q) !== -1) {
+                any = true;
+                html += '<div class="nx-rx-datesel-group">' + customItemHtml() + "</div>";
+            }
+            if (cur() === "custom") {
+                var f = rx.filters || {};
+                html += '<div class="nx-rx-datesel-range" data-rx-datesel-range>' +
+                    '<input type="date" class="nx-rx-finput" data-rx-datesel-from value="' + app.esc(f.start || "") + '" aria-label="' + app.esc(app.t("From")) + '" />' +
+                    '<span class="nx-rx-datesel-range-arrow">' + app.ic("arrow-right", 12) + "</span>" +
+                    '<input type="date" class="nx-rx-finput" data-rx-datesel-to value="' + app.esc(f.end || "") + '" aria-label="' + app.esc(app.t("To")) + '" />' +
+                    '<button type="button" class="nx-rx-btn nx-rx-btn-sm nx-rx-btn-primary" data-rx-datesel-apply>' + app.esc(app.t("Apply")) + "</button>" +
+                    "</div>";
+            }
+            if (!any) html = '<div class="nx-rx-datesel-empty">' + app.esc(app.t("No matching periods")) + "</div>";
+            list.innerHTML = html;
+        }
+
+        trigger.addEventListener("click", function (e) {
+            e.stopPropagation();
+            if (isOpen()) close(); else open();
+        });
+        list.addEventListener("click", function (e) {
+            var item = e.target.closest("[data-rx-datesel-item]");
+            if (item) {
+                var k = item.getAttribute("data-rx-datesel-item");
+                if (k === "custom") { rx.filters.preset = "custom"; selectCustom(); }
+                else selectPreset(k);
+                return;
+            }
+            var apply = e.target.closest("[data-rx-datesel-apply]");
+            if (apply) applyCustomRange();
+        });
+        list.addEventListener("change", function (e) {
+            var t = e.target;
+            if (t && t.hasAttribute && t.hasAttribute("data-rx-datesel-from")) {
+                var f = rx.filters || {}; f.preset = "custom"; f.start = t.value; rx.filters = f;
+            }
+            if (t && t.hasAttribute && t.hasAttribute("data-rx-datesel-to")) {
+                var f2 = rx.filters || {}; f2.preset = "custom"; f2.end = t.value; rx.filters = f2;
+            }
+        });
+        query.addEventListener("input", function () { renderList(); });
+        query.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") { close(); trigger.focus(); return; }
+            if (e.key === "Enter") {
+                var vis = list.querySelectorAll("[data-rx-datesel-item]");
+                if (vis.length) vis[0].click();
+                return;
+            }
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                var items = Array.prototype.slice.call(list.querySelectorAll("[data-rx-datesel-item]"));
+                var curI = items.indexOf(document.activeElement);
+                var step = e.key === "ArrowDown" ? 1 : -1;
+                var next = curI === -1 ? (e.key === "ArrowDown" ? 0 : items.length - 1) : (curI + step + items.length) % items.length;
+                if (items[next]) items[next].focus();
+            }
+        });
+        setTimeout(function () {
+            wrap.__rxClose = close;
+        }, 0);
+    }
+
+    document.addEventListener("click", function rxDateselOutside(ev) {
+        document.querySelectorAll("[data-rx-datesel]").forEach(function (w) {
+            if (w.__rxClose && !w.contains(ev.target)) w.__rxClose();
+        });
+    });
+    document.addEventListener("keydown", function rxDateselEsc(ev) {
+        if (ev.key !== "Escape") return;
+        document.querySelectorAll("[data-rx-datesel]").forEach(function (w) {
+            if (w.__rxClose) w.__rxClose();
+        });
+    });
+    document.addEventListener("click", function rxChartMenuOutside(ev) {
+        if (ev.target && ev.target.closest && ev.target.closest(".nx-rx-chart-more")) return;
+        document.querySelectorAll("[data-rx-chart-menu]:not([hidden])").forEach(function (m) { m.hidden = true; });
+    });
 
     function selectOptions(list, labelField, current) {
         var html = '<option value="">' + "-- " + "</option>";
@@ -1654,6 +1870,21 @@ window.NexoraDashboard.Reports = (function () {
         var totals = payload.totals || {};
         var pagination = payload.pagination || {};
 
+        var sparkMap = {};
+        charts.forEach(function (ch) {
+            var t = String(ch.title || "").toLowerCase();
+            kpis.forEach(function (k) {
+                if (sparkMap[k.key] !== undefined) return;
+                var kl = String(k.label || "").toLowerCase();
+                if ((t.indexOf(kl) !== -1 || kl.indexOf(t) !== -1) && ch.series && ch.series[0] && ch.series[0].data && ch.series[0].data.length >= 2) {
+                    sparkMap[k.key] = ch.series[0].data.map(Number);
+                }
+            });
+        });
+
+        var extra = clientInsights(app, payload, currency);
+        if (extra.length) insights = insights.concat(extra);
+
         html += '<div class="nx-rx-meta">' +
             "<span>" + app.ic("building", 12) + " " + app.esc(payload.meta.company || "") + "</span>" +
             "<span>" + app.ic("calendar", 12) + " " + app.esc(payload.filters.applied.from_date) + " → " + app.esc(payload.filters.applied.to_date) + "</span>" +
@@ -1663,7 +1894,7 @@ window.NexoraDashboard.Reports = (function () {
         if (kpis.length) {
             html += '<div class="nx-rx-kpis">';
             kpis.forEach(function (k) {
-                html += kpiHtml(app, k, currency);
+                html += kpiHtml(app, k, currency, sparkMap[k.key]);
             });
             html += "</div>";
         }
@@ -1687,10 +1918,12 @@ window.NexoraDashboard.Reports = (function () {
                     '<div class="nx-rx-chart-title">' + app.esc(app.t(c.title)) + "</div>" +
                     '<span class="nx-rx-chart-sub">' + app.esc(app.t(c.subtitle || c.description || "")) + "</span>" +
                     '<span class="nx-rx-chart-acts">' +
-                    '<button class="nx-rx-chart-act" data-rx-chart-act="type" title="' + app.esc(app.t("Switch chart type")) + '">' + app.ic("chart", 13) + "</button>" +
-                    '<button class="nx-rx-chart-act" data-rx-chart-act="legend" title="' + app.esc(app.t("Toggle legend")) + '">' + app.ic("layers", 13) + "</button>" +
-                    '<button class="nx-rx-chart-act" data-rx-chart-act="download" title="' + app.esc(app.t("Download PNG")) + '">' + app.ic("download", 13) + "</button>" +
                     '<button class="nx-rx-chart-act" data-rx-chart-act="fullscreen" title="' + app.esc(app.t("Fullscreen chart")) + '">' + app.ic("maximize", 13) + "</button>" +
+                    '<button class="nx-rx-chart-act" data-rx-chart-act="download" title="' + app.esc(app.t("Download PNG")) + '">' + app.ic("download", 13) + "</button>" +
+                    '<div class="nx-rx-chart-more" data-rx-chart-more>' +
+                    '<button class="nx-rx-chart-act" data-rx-chart-act="more" title="' + app.esc(app.t("Chart options")) + '" aria-haspopup="true" aria-expanded="false">' + app.ic("more-horizontal", 14) + "</button>" +
+                    '<div class="nx-rx-chart-menu" data-rx-chart-menu hidden role="menu"></div>' +
+                    "</div>" +
                     "</span>" +
                     "</div>" +
                     '<div class="nx-rx-chart" data-rx-chart="' + app.esc(c.key) + '"></div>' +
@@ -1769,7 +2002,7 @@ window.NexoraDashboard.Reports = (function () {
         }
     }
 
-    function kpiHtml(app, k, currency) {
+    function kpiHtml(app, k, currency, spark) {
         var value = fmtValue(app, k.format || "money", currency, k.value);
         var deltaHtml = "";
         if (k.delta !== null && k.delta !== undefined) {
@@ -1778,6 +2011,8 @@ window.NexoraDashboard.Reports = (function () {
             deltaHtml = '<span class="nx-rx-kpi-delta"><span class="nx-badge ' + cls + '">' +
                 app.ic(up ? "arrow-up" : "arrow-down", 12) + " " + app.num(Math.abs(k.delta), 1) + "%</span></span>";
         }
+        var sparkHtml = "";
+        if (spark && spark.length >= 2) sparkHtml = '<div class="nx-rx-kpi-spark">' + sparkSvg(app, spark) + "</div>";
         return '<div class="nx-rx-kpi nx-kpi-' + app.esc(k.color || "indigo") + '">' +
             '<div class="nx-rx-kpi-top">' +
             '<span class="nx-rx-kpi-ic nx-ic-' + app.esc(k.color || "indigo") + '">' + app.ic(k.icon || "circle", 13) + "</span>" +
@@ -1786,7 +2021,61 @@ window.NexoraDashboard.Reports = (function () {
             "</div>" +
             '<div class="nx-rx-kpi-value">' + value + "</div>" +
             (k.delta_label ? '<div class="nx-rx-kpi-sub">' + app.esc(app.t(k.delta_label)) + "</div>" : "") +
+            sparkHtml +
             "</div>";
+    }
+
+    function sparkSvg(app, data) {
+        var n = data.length;
+        var min = Math.min.apply(null, data), max = Math.max.apply(null, data);
+        var span = (max - min) || 1;
+        var w = 92, h = 26, pad = 2;
+        var pts = data.map(function (v, i) {
+            var x = pad + (i / (n - 1)) * (w - pad * 2);
+            var y = h - pad - ((v - min) / span) * (h - pad * 2);
+            return x.toFixed(1) + "," + y.toFixed(1);
+        }).join(" ");
+        var up = data[n - 1] >= data[0];
+        var color = up ? "#2f9e6e" : "#ef4444";
+        return '<svg viewBox="0 0 ' + w + " " + h + '" width="' + w + '" height="' + h + '" preserveAspectRatio="none" role="img" aria-hidden="true">' +
+            '<polyline fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" points="' + pts + '"/></svg>';
+    }
+
+    function clientInsights(app, payload, currency) {
+        var out = [];
+        (payload.charts || []).forEach(function (c) {
+            var cats = c.categories || [];
+            var s0 = (c.series || [])[0];
+            if (!s0 || !s0.data || s0.data.length < 2 || !cats.length) return;
+            var vals = s0.data.map(Number);
+            var fmt = (Array.isArray(c.formats) ? c.formats[0] : c.formats) || "money";
+            var maxI = 0, minI = 0;
+            vals.forEach(function (v, i) { if (v > vals[maxI]) maxI = i; if (v < vals[minI]) minI = i; });
+            if (vals[maxI] > 0) {
+                out.push({ icon: "zap", tone: "up",
+                    text: app.t("{0} peaked at {1} in {2}.", [app.t(c.title), fmtValue(app, fmt, currency, vals[maxI]), app.t(cats[maxI])]) });
+            }
+            var first = vals[0], last = vals[vals.length - 1];
+            if (first !== 0) {
+                var pct = ((last - first) / Math.abs(first)) * 100;
+                if (Math.abs(pct) >= 1) {
+                    out.push({ icon: pct >= 0 ? "trending-up" : "trending-down", tone: pct >= 0 ? "up" : "down",
+                        text: app.t("{0} {1} by {2}% over the period.", [app.t(c.title), pct >= 0 ? app.t("grew") : app.t("dropped"), numOf(Math.abs(pct), 1)]) });
+                }
+            }
+            if (vals.length >= 2 && vals[maxI] > 0) {
+                out.push({ icon: "bar-chart", tone: "info",
+                    text: app.t("Lowest point for {0} was {1} ({2}).", [app.t(c.title), fmtValue(app, fmt, currency, vals[minI]), app.t(cats[minI])]) });
+            }
+        });
+        (payload.kpis || []).forEach(function (k) {
+            if (k.delta === null || k.delta === undefined) return;
+            if (Math.abs(k.delta) >= 1) {
+                out.push({ icon: k.delta >= 0 ? "trending-up" : "trending-down", tone: k.delta >= 0 ? "up" : "down",
+                    text: app.t("{0} is {1} {2}% vs previous period.", [app.t(k.label), k.delta >= 0 ? app.t("up") : app.t("down"), numOf(Math.abs(k.delta), 1)]) });
+            }
+        });
+        return out.slice(0, 5);
     }
 
     function fmtCell(app, currency, col, v) {
@@ -1797,13 +2086,18 @@ window.NexoraDashboard.Reports = (function () {
         return String(v);
     }
 
+    var CHART_TYPES = [
+        ["line", "Line"], ["area", "Area"], ["column", "Column"], ["bar", "Bar"],
+        ["stacked", "Stacked Column"], ["pie", "Pie"], ["donut", "Donut"], ["radar", "Radar"]
+    ];
+
     function renderChart(app, rx, el, c, currency) {
         var dark = app.state && app.state.theme === "dark";
         var isBar = c.type === "bar";
         var isColumn = c.type === "column";
         var isDonut = c.type === "donut";
         var isLine = c.type === "line";
-        var apexType = isBar || isColumn ? "bar" : (isDonut ? "donut" : "line");
+        var apexType = isBar || isColumn ? "bar" : (isDonut ? "donut" : (isLine ? "line" : "line"));
         var formats = Array.isArray(c.formats) ? c.formats : [c.formats || "money"];
         var series = (c.series || []).map(function (s) { return { name: s.name, data: (s.data || []).map(Number) }; });
         var formatter = function (v, i) {
@@ -1814,7 +2108,9 @@ window.NexoraDashboard.Reports = (function () {
             chart: {
                 type: apexType, height: 280, background: "transparent",
                 toolbar: { show: false },
-                zoom: { enabled: true, type: "x", autoScaleYaxis: true, zoomedArea: { fill: { color: "#5b63f2", opacity: 0.08 } } },
+                zoom: { enabled: true, type: "xy", autoScaleYaxis: true, zoomedArea: { fill: { color: "#5b63f2", opacity: 0.08 } } },
+                pan: { enabled: true, type: "xy", strokeDashArray: 3 },
+                selection: { enabled: false },
                 fontFamily: "inherit",
                 foreColor: dark ? "#aab3c5" : "#5b6472",
                 animations: { enabled: true, speed: 420, animateGradually: { enabled: true, delay: 90 } }
@@ -1822,9 +2118,10 @@ window.NexoraDashboard.Reports = (function () {
             colors: PALETTE,
             dataLabels: { enabled: false },
             stroke: { curve: "smooth", width: 2 },
-            grid: { borderColor: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", strokeDashArray: 4 },
+            grid: { show: true, borderColor: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", strokeDashArray: 4 },
             legend: { show: true, position: "bottom", labels: { colors: dark ? "#c6cdd9" : "#39424e" } },
-            tooltip: { theme: dark ? "dark" : "light", shared: true, intersect: false, y: { formatter: formatter } },
+            crosshairs: { show: true, stroke: { color: "#5b63f2", width: 1, dashArray: 3 }, fill: { type: "solid", color: "#5b63f2", gradient: { opacityFrom: 0.06, opacityTo: 0.06 } } },
+            tooltip: { theme: dark ? "dark" : "light", shared: true, intersect: false, x: { show: true }, y: { formatter: formatter } },
             xaxis: { categories: c.categories || [], labels: { style: { colors: dark ? "#aab3c5" : "#5b6472" } } },
             yaxis: { labels: { formatter: formatter } }
         };
@@ -1843,6 +2140,13 @@ window.NexoraDashboard.Reports = (function () {
         try {
             chart = new window.ApexCharts(el, { series: series, ...config });
             chart.render();
+            chart.__nxType = c.type || "line";
+            chart.__nxDark = !!dark;
+            chart.__nxTrend = false;
+            chart.__nxAvg = false;
+            chart.__origSeries = series;
+            chart.__baseConfig = config;
+            chart.__origLabels = (c.categories || []).slice();
             rx.charts.push(chart);
             bindChartActs(app, rx, el, c, chart, currency);
         } catch (e) {
@@ -1853,20 +2157,192 @@ window.NexoraDashboard.Reports = (function () {
     function bindChartActs(app, rx, el, c, chart, currency) {
         var card = el.closest(".nx-rx-chart-card");
         if (!card) return;
+        var menu = card.querySelector("[data-rx-chart-menu]");
+        var moreBtn = card.querySelector('[data-rx-chart-act="more"]');
+
+        function chartToggled() { refreshChartMenu(card, chart, app); }
+
+        function reRender() {
+            var i = rx.charts.indexOf(chart);
+            if (i !== -1) rx.charts.splice(i, 1);
+            try { chart.destroy(); } catch (e) {}
+            el.innerHTML = "";
+            renderChart(app, rx, el, c, currency);
+        }
+
         card.querySelectorAll("[data-rx-chart-act]").forEach(function (btn) {
+            if (btn === moreBtn) return;
             btn.addEventListener("click", function (e) {
                 e.stopPropagation();
-                chartAct(app, rx, btn, c, chart, currency, card);
+                if (btn.getAttribute("data-rx-chart-act") !== "more") {
+                    var pop = card.querySelector("[data-rx-chart-menu]");
+                    if (pop && !pop.hidden) pop.hidden = true;
+                }
+                chartAct(app, rx, btn, c, chart, currency, card, reRender);
+                chartToggled();
             });
         });
+        if (menu) {
+            menu.addEventListener("click", function (e) {
+                e.stopPropagation();
+                var typeBtn = e.target.closest("[data-rx-chart-type]");
+                if (typeBtn) {
+                    var dark2 = chart.__nxDark;
+                    chart.__nxType = typeBtn.getAttribute("data-rx-chart-type");
+                    chart.updateOptions(typeOptions(app, c, chart.__nxType, currency, dark2));
+                    refreshChartMenu(card, chart, app);
+                    return;
+                }
+                var actBtn = e.target.closest("[data-rx-chart-act]");
+                if (actBtn) {
+                    chartAct(app, rx, actBtn, c, chart, currency, card, reRender);
+                    if (actBtn.getAttribute("data-rx-chart-act") !== "reset-view") {
+                        refreshChartMenu(card, chart, app);
+                    } else {
+                        menu.hidden = true;
+                    }
+                    return;
+                }
+            });
+        }
+        if (moreBtn) {
+            moreBtn.addEventListener("click", function (e) {
+                e.stopPropagation();
+                var open = menu.hidden;
+                menu.hidden = !open;
+                moreBtn.setAttribute("aria-expanded", String(open));
+                refreshChartMenu(card, chart, app);
+            });
+        }
+        refreshChartMenu(card, chart, app);
     }
 
-    function chartAct(app, rx, btn, c, chart, currency, card) {
+    function refreshChartMenu(card, chart, app) {
+        var menu = card.querySelector("[data-rx-chart-menu]");
+        if (!menu) return;
+        var t = chart.__nxType || "line";
+        var labels = { line: app.t("Line"), area: app.t("Area"), column: app.t("Column"), bar: app.t("Bar"), stacked: app.t("Stacked Column"), pie: app.t("Pie"), donut: app.t("Donut"), radar: app.t("Radar") };
+        var html = '<div class="nx-rx-chart-menu-label">' + app.esc(app.t("Chart type")) + "</div>";
+        CHART_TYPES.forEach(function (p) {
+            var cur = p[0] === t;
+            html += '<button type="button" class="nx-rx-chart-menu-item' + (cur ? " is-on" : "") + '" data-rx-chart-type="' + p[0] + '">' +
+                "<span>" + app.esc(app.t(p[1])) + "</span>" +
+                (cur ? app.ic("check", 12) : "") + "</button>";
+        });
+        var toggles = [
+            ["legend", "Legend", "layers", chart.opts && chart.opts.legend ? chart.opts.legend.show : true],
+            ["data-labels", "Data labels", "tag", chart.opts && chart.opts.dataLabels ? chart.opts.dataLabels.enabled : false],
+            ["grid", "Grid", "grid", chart.opts && chart.opts.grid ? chart.opts.grid.show : true],
+            ["animation", "Animation", "activity", chart.opts && chart.opts.chart && chart.opts.chart.animations ? chart.opts.chart.animations.enabled : true],
+            ["average", "Average line", "trending-up", !!chart.__nxAvg],
+            ["trend", "Trend line", "move", !!chart.__nxTrend],
+            ["dark", "Dark chart", "moon", !!chart.__nxDark]
+        ];
+        html += '<div class="nx-rx-chart-menu-sep"></div>';
+        toggles.forEach(function (tg) {
+            html += '<button type="button" class="nx-rx-chart-menu-item' + (tg[3] ? " is-on" : "") + '" data-rx-chart-act="' + tg[0] + '">' +
+                '<span class="nx-rx-chart-menu-ic">' + app.ic(tg[2], 13) + "</span><span>" + app.esc(app.t(tg[1])) + "</span>" +
+                (tg[3] ? app.ic("check", 12) : "") + "</button>";
+        });
+        html += '<div class="nx-rx-chart-menu-sep"></div>';
+        var exports = [
+            ["export-png", "Export PNG", "image"],
+            ["export-svg", "Export SVG", "file"],
+            ["export-pdf", "Export PDF", "file-text"],
+            ["export-excel", "Export Excel", "file-spreadsheet"],
+            ["export-csv", "Export CSV", "download"],
+            ["copy", "Copy image", "copy"]
+        ];
+        exports.forEach(function (ex) {
+            html += '<button type="button" class="nx-rx-chart-menu-item" data-rx-chart-act="' + ex[0] + '">' +
+                '<span class="nx-rx-chart-menu-ic">' + app.ic(ex[2], 13) + "</span><span>" + app.esc(app.t(ex[1])) + "</span></button>";
+        });
+        html += '<div class="nx-rx-chart-menu-sep"></div>';
+        html += '<button type="button" class="nx-rx-chart-menu-item" data-rx-chart-act="reset-view">' +
+            '<span class="nx-rx-chart-menu-ic">' + app.ic("rotate", 13) + "</span><span>" + app.esc(app.t("Reset view")) + "</span></button>";
+        menu.innerHTML = html;
+    }
+
+    function typeOptions(app, c, next, currency, dark) {
+        var opts = {};
+        var base = { line: "line", area: "area", column: "bar", bar: "bar", stacked: "bar", pie: "pie", donut: "donut", radar: "radar" }[next] || "line";
+        opts.chart = { type: base };
+        opts.labels = undefined;
+        opts.legend = { show: true, position: "bottom", labels: { colors: dark ? "#c6cdd9" : "#39424e" } };
+        if (next === "column") opts.plotOptions = { bar: { horizontal: false, columnWidth: "55%", borderRadius: 5 } };
+        else if (next === "bar") opts.plotOptions = { bar: { horizontal: true, borderRadius: 5, barHeight: "62%" } };
+        else if (next === "stacked") opts.plotOptions = { bar: { horizontal: false, columnWidth: "55%", borderRadius: 5, stacked: true } };
+        else if (next === "pie" || next === "donut") {
+            opts.labels = c.categories || [];
+            opts.legend = { show: true, position: "right", labels: { colors: dark ? "#c6cdd9" : "#39424e" } };
+            if (next === "donut") {
+                opts.plotOptions = { pie: { donut: { size: "62%", labels: { show: true, total: { show: true, label: app.t("Total"), formatter: function (w) { return moneyOf(currency, w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0)); } } } } } };
+            } else {
+                opts.plotOptions = { pie: { expandOnClick: true } };
+            }
+        } else {
+            opts.plotOptions = undefined;
+        }
+        return opts;
+    }
+
+    function chartAct(app, rx, btn, c, chart, currency, card, reRender) {
         var kind = btn.getAttribute("data-rx-chart-act");
+        var type = btn.getAttribute("data-rx-chart-type");
+        if (type) {
+            var dark = chart.__nxDark;
+            chart.__nxType = type;
+            chart.updateOptions(typeOptions(app, c, type, currency, dark));
+            return;
+        }
         if (kind === "legend") {
             var show = chart.opts && chart.opts.legend ? chart.opts.legend.show : true;
             chart.updateOptions({ legend: { show: !show } });
             btn.classList.toggle("is-on", !show);
+            return;
+        }
+        if (kind === "data-labels") {
+            var dl = chart.opts && chart.opts.dataLabels ? chart.opts.dataLabels.enabled : false;
+            chart.updateOptions({ dataLabels: { enabled: !dl } });
+            return;
+        }
+        if (kind === "grid") {
+            var gs = chart.opts && chart.opts.grid ? chart.opts.grid.show : true;
+            chart.updateOptions({ grid: { show: !gs } });
+            return;
+        }
+        if (kind === "animation") {
+            var an = chart.opts && chart.opts.chart && chart.opts.chart.animations ? chart.opts.chart.animations.enabled : true;
+            chart.updateOptions({ chart: { animations: { enabled: !an } } });
+            return;
+        }
+        if (kind === "average") {
+            chart.__nxAvg = !chart.__nxAvg;
+            setChartAnnotations(chart, app, currency);
+            return;
+        }
+        if (kind === "trend") {
+            chart.__nxTrend = !chart.__nxTrend;
+            var s = chart.__origSeries || [];
+            if (chart.__nxTrend) {
+                var src = s[0] && s[0].data ? s[0].data : [];
+                var td = trendOf(src);
+                chart.updateSeries(s.concat([{ name: app.t("Trend"), data: td }]));
+            } else {
+                chart.updateSeries(s);
+            }
+            return;
+        }
+        if (kind === "dark") {
+            chart.__nxDark = !chart.__nxDark;
+            var d2 = chart.__nxDark;
+            chart.updateOptions({
+                chart: { foreColor: d2 ? "#aab3c5" : "#5b6472" },
+                tooltip: { theme: d2 ? "dark" : "light" },
+                grid: { borderColor: d2 ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)" },
+                legend: { labels: { colors: d2 ? "#c6cdd9" : "#39424e" } },
+                xaxis: { labels: { style: { colors: d2 ? "#aab3c5" : "#5b6472" } } }
+            });
             return;
         }
         if (kind === "fullscreen") {
@@ -1877,37 +2353,226 @@ window.NexoraDashboard.Reports = (function () {
             setTimeout(function () { try { chart.resize(); } catch (e) {} }, 60);
             return;
         }
-        if (kind === "download") {
-            if (chart.dataURI) {
-                chart.dataURI().then(function (res) {
-                    if (!res || !res.imgURI) return;
-                    var a = document.createElement("a");
-                    a.href = res.imgURI;
-                    a.download = (c.key || "chart") + ".png";
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                }).catch(function () {});
-            }
+        if (kind === "download" || kind === "export-png") {
+            exportChartPNG(chart, c.key);
             return;
         }
-        if (kind === "type") {
-            var next = nextChartType(c.type);
-            var isBar2 = next === "bar" || next === "column";
-            chart.updateOptions({
-                chart: { type: isBar2 ? "bar" : (next === "donut" ? "donut" : "line") },
-                plotOptions: isBar2 ? { bar: { horizontal: next === "bar", columnWidth: "55%", borderRadius: 5 } } : undefined,
-                labels: next === "donut" ? (c.categories || []) : undefined,
-                legend: { position: next === "donut" ? "right" : "bottom" }
-            });
-            return;
-        }
+        if (kind === "export-svg") { exportChartSVG(el, c.key); return; }
+        if (kind === "export-pdf") { exportChartPDF(chart, c.key); return; }
+        if (kind === "export-excel") { exportChartExcel(app, chart, c, currency); return; }
+        if (kind === "export-csv") { exportChartCSV(app, chart, c, currency); return; }
+        if (kind === "copy") { copyChartImage(chart, c.key); return; }
+        if (kind === "reset-view") { if (reRender) reRender(); return; }
     }
 
-    function nextChartType(cur) {
-        var order = ["line", "column", "bar", "donut"];
-        var i = order.indexOf(cur);
-        return order[(i + 1) % order.length];
+    function setChartAnnotations(chart, app, currency) {
+        if (!chart.__nxAvg) { try { chart.updateOptions({ annotations: { yaxis: [] } }); } catch (e) {} return; }
+        var src = (chart.__origSeries && chart.__origSeries[0] && chart.__origSeries[0].data) || [];
+        var avg = src.length ? src.reduce(function (a, b) { return a + b; }, 0) / src.length : 0;
+        try {
+            chart.updateOptions({
+                annotations: {
+                    yaxis: [{
+                        y: avg, strokeDashArray: 4, borderColor: "#4f6ef7", borderWidth: 1.5,
+                        label: { text: app.t("Average"), borderColor: "#4f6ef7", style: { background: "#4f6ef7", color: "#fff", fontSize: "10px", padding: { left: 6, right: 6, top: 2, bottom: 2 } } }
+                    }]
+                }
+            });
+        } catch (e) {}
+    }
+
+    function trendOf(arr) {
+        var n = arr.length;
+        if (n < 2) return arr.slice();
+        var sx = 0, sy = 0, sxy = 0, sxx = 0;
+        arr.forEach(function (y, x) { sx += x; sy += y; sxy += x * y; sxx += x * x; });
+        var d = n * sxx - sx * sx;
+        var a = d ? (n * sxy - sx * sy) / d : 0;
+        var b = d ? (sy - a * sx) / n : sy / n;
+        return arr.map(function (_, x) { return a * x + b; });
+    }
+
+    function exportChartPNG(chart, key) {
+        if (!chart.dataURI) return;
+        chart.dataURI().then(function (res) {
+            if (!res || !res.imgURI) return;
+            var a = document.createElement("a");
+            a.href = res.imgURI;
+            a.download = (key || "chart") + ".png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }).catch(function () {});
+    }
+
+    function exportChartSVG(el, key) {
+        var svg = el && el.querySelector(".apexcharts-svg");
+        if (!svg) return;
+        try {
+            var s = new XMLSerializer().serializeToString(svg);
+            var blob = new Blob([s], { type: "image/svg+xml" });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = (key || "chart") + ".svg";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+        } catch (e) {}
+    }
+
+    function exportChartCSV(app, chart, c, currency) {
+        var cats = c.categories || [];
+        var series = chart.__origSeries || [];
+        var lines = [];
+        lines.push(["category"].concat(cats).join(","));
+        series.forEach(function (s) {
+            lines.push(s.name.replace(/,/g, " ") + "," + (s.data || []).map(function (v) { return v; }).join(","));
+        });
+        var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = (c.key || "chart") + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+    }
+
+    function exportChartPDF(chart, key) {
+        if (!chart.dataURI) return;
+        chart.dataURI().then(function (res) {
+            if (!res || !res.imgURI) return;
+            buildPdfFromImage(res.imgURI, key);
+        }).catch(function () {});
+    }
+
+    function buildPdfFromImage(imgURI, key) {
+        var img = new Image();
+        img.onload = function () {
+            try {
+                var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+                var cw = Math.max(1, Math.round(img.width * scale));
+                var ch = Math.max(1, Math.round(img.height * scale));
+                var cv = document.createElement("canvas");
+                cv.width = cw;
+                cv.height = ch;
+                var ctx = cv.getContext("2d");
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, cw, ch);
+                ctx.drawImage(img, 0, 0, cw, ch);
+                var jpeg = cv.toDataURL("image/jpeg", 0.92);
+                var pageW = 595, pageH = 842, m = 30;
+                var fit = Math.min((pageW - 2 * m) / cw, (pageH - 2 * m) / ch);
+                var dw = Math.max(1, Math.round(cw * fit));
+                var dh = Math.max(1, Math.round(ch * fit));
+                var x = Math.round((pageW - dw) / 2);
+                var y = Math.round((pageH - dh) / 2);
+                var pdf = makePdf(jpeg, dw, dh, x, y, pageW, pageH);
+                var blob = new Blob([pdf], { type: "application/pdf" });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement("a");
+                a.href = url;
+                a.download = (key || "chart") + ".pdf";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+            } catch (e) {}
+        };
+        img.onerror = function () {};
+        img.src = imgURI;
+    }
+
+    function makePdf(jpegDataUrl, dw, dh, x, y, pageW, pageH) {
+        var b64 = (jpegDataUrl.split(",")[1] || "").replace(/\s/g, "");
+        var bin = atob(b64);
+        var len = bin.length;
+        var imgBytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) imgBytes[i] = bin.charCodeAt(i) & 0xff;
+        var te = new TextEncoder();
+        var enc = function (s) { return te.encode(s); };
+        var content = "q\n" + dw + " 0 0 " + dh + " " + x + " " + y + " cm\n/Im0 Do\nQ\n";
+        var contentBytes = enc(content);
+        var imgDict = "<< /Type /XObject /Subtype /Image /Width " + dw + " /Height " + dh + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + len + " >>";
+        var chunks = [];
+        var off = 0;
+        var push = function (b) { chunks.push(b); off += b.length; };
+        var objOffsets = [];
+        push(enc("%PDF-1.4\n"));
+        objOffsets.push(off);
+        push(enc("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"));
+        objOffsets.push(off);
+        push(enc("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"));
+        objOffsets.push(off);
+        push(enc("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH + "] /Resources << /XObject << /Im0 5 0 R >> /ProcSet [/PDF /Text /ImageC] >> /Contents 4 0 R >>\nendobj\n"));
+        objOffsets.push(off);
+        push(enc("4 0 obj\n<< /Length " + contentBytes.length + " >>\nstream\n"));
+        push(contentBytes);
+        push(enc("\nendstream\nendobj\n"));
+        objOffsets.push(off);
+        push(enc("5 0 obj\n" + imgDict + "\nstream\n"));
+        push(imgBytes);
+        push(enc("\nendstream\nendobj\n"));
+        var xrefOff = off;
+        var xref = "xref\n0 6\n0000000000 65535 f \n";
+        objOffsets.forEach(function (o) { xref += ("0000000000" + o).slice(-10) + " 00000 n \n"; });
+        xref += "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xrefOff + "\n%%EOF\n";
+        push(enc(xref));
+        var total = chunks.reduce(function (a, c) { return a + c.length; }, 0);
+        var out = new Uint8Array(total);
+        var pos = 0;
+        chunks.forEach(function (c) { out.set(c, pos); pos += c.length; });
+        return out;
+    }
+
+    function exportChartExcel(app, chart, c, currency) {
+        var cats = c.categories || [];
+        var series = chart.__origSeries || [];
+        var lines = [];
+        var title = c.title || c.key || "chart";
+        lines.push("\"" + String(title).replace(/"/g, '""') + "\"");
+        lines.push("");
+        lines.push(["Category"].concat(cats).join(","));
+        series.forEach(function (s) {
+            lines.push(String(s.name).replace(/,/g, " ") + "," + (s.data || []).map(function (v) { return v; }).join(","));
+        });
+        var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "application/vnd.ms-excel;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = (c.key || "chart") + ".xls";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+    }
+
+    function copyChartImage(chart, key) {
+        if (!chart.dataURI) return;
+        chart.dataURI().then(function (res) {
+            if (!res || !res.imgURI) return;
+            try {
+                fetch(res.imgURI).then(function (r) { return r.blob(); }).then(function (blob) {
+                    if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+                        navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])["catch"](function () {
+                            fallbackDownload(res.imgURI, key);
+                        });
+                    } else { fallbackDownload(res.imgURI, key); }
+                })["catch"](function () { fallbackDownload(res.imgURI, key); });
+            } catch (e) { fallbackDownload(res.imgURI, key); }
+        }).catch(function () {});
+    }
+
+    function fallbackDownload(uri, key) {
+        var a = document.createElement("a");
+        a.href = uri;
+        a.download = (key || "chart") + ".png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     }
 
     /* ------------------------------------------------------------------ drill */
@@ -1951,6 +2616,7 @@ window.NexoraDashboard.Reports = (function () {
 
     function runAction(app, rx, btn) {
         var act = btn.getAttribute("data-rx-act");
+        if (act === "more") { toggleMoreMenu(app, btn); return; }
         if (act === "refresh") {
             if (rx.lastKey && rx.meta && rx.filters) {
                 rx.token++;
@@ -1967,6 +2633,15 @@ window.NexoraDashboard.Reports = (function () {
             if (rx.lastKey && rx.meta && rx.filters) {
                 saveView(rx.lastKey, rx.meta, rx.filters);
                 flash(btn, app.t("Saved"));
+            }
+            return;
+        }
+        if (act === "duplicate") {
+            if (rx.lastKey && rx.meta && rx.filters) {
+                var dup = {};
+                for (var dk in rx.filters) dup[dk] = rx.filters[dk];
+                saveView(rx.lastKey, rx.meta, dup, true);
+                flash(btn, app.t("View duplicated"));
             }
             return;
         }
@@ -1990,6 +2665,51 @@ window.NexoraDashboard.Reports = (function () {
         if (act === "export-csv" || act === "export-excel" || act === "export-json" || act === "print") {
             doExport(app, rx, act);
             return;
+        }
+    }
+
+    function toggleMoreMenu(app, btn) {
+        var pop = app.main.querySelector("[data-rx-more-pop]");
+        if (!pop) return;
+        var open = pop.hidden;
+        if (open) {
+            pop.hidden = false;
+            btn.setAttribute("aria-expanded", "true");
+            var more = app.main.querySelector("[data-rx-more]");
+            if (more) more.classList.add("is-open");
+            setTimeout(function () {
+                function closeAll(ev) {
+                    if (ev && (ev.target.closest("[data-rx-more]") || ev.target.closest("[data-rx-act='more']"))) return;
+                    pop.hidden = true;
+                    btn.setAttribute("aria-expanded", "false");
+                    var m = app.main.querySelector("[data-rx-more]");
+                    if (m) m.classList.remove("is-open");
+                    document.removeEventListener("click", closeAll);
+                    document.removeEventListener("keydown", escAll);
+                }
+                function escAll(e) { if (e.key === "Escape") closeAll(); }
+                setTimeout(function () {
+                    document.addEventListener("click", closeAll);
+                    document.addEventListener("keydown", escAll);
+                }, 0);
+            }, 0);
+        } else {
+            pop.hidden = true;
+            btn.setAttribute("aria-expanded", "false");
+            var more2 = app.main.querySelector("[data-rx-more]");
+            if (more2) more2.classList.remove("is-open");
+        }
+    }
+
+    function syncMoreCheck(btn, on) {
+        var check = btn.querySelector(".nx-rx-more-item-check");
+        if (on && !check) {
+            var span = document.createElement("span");
+            span.className = "nx-rx-more-item-check";
+            span.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            btn.appendChild(span);
+        } else if (!on && check) {
+            check.remove();
         }
     }
 

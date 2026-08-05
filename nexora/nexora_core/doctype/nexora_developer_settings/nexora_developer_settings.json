@@ -1,0 +1,140 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 11:27:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_git",
+    "default_branch",
+    "column_break_git",
+    "enable_auto_tag",
+    "version_prefix",
+    "section_backup",
+    "auto_backup_enabled",
+    "backup_retention_days",
+    "column_break_backup",
+    "backup_storage_path",
+    "section_github",
+    "enable_github_integration",
+    "github_token",
+    "column_break_github",
+    "github_repo",
+    "section_modes",
+    "quick_publish_skip_confirm"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_git",
+      "fieldtype": "Section Break",
+      "label": "Git Configuration"
+    },
+    {
+      "default": "main",
+      "fieldname": "default_branch",
+      "fieldtype": "Data",
+      "label": "Default Branch"
+    },
+    {
+      "fieldname": "column_break_git",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "0",
+      "fieldname": "enable_auto_tag",
+      "fieldtype": "Check",
+      "label": "Enable Automatic Tagging"
+    },
+    {
+      "default": "v",
+      "fieldname": "version_prefix",
+      "fieldtype": "Data",
+      "label": "Version Prefix"
+    },
+    {
+      "fieldname": "section_backup",
+      "fieldtype": "Section Break",
+      "label": "Backup Configuration"
+    },
+    {
+      "default": "1",
+      "fieldname": "auto_backup_enabled",
+      "fieldtype": "Check",
+      "label": "Enable Automatic Backup Before Publish"
+    },
+    {
+      "default": "30",
+      "fieldname": "backup_retention_days",
+      "fieldtype": "Int",
+      "label": "Backup Retention (Days)"
+    },
+    {
+      "fieldname": "column_break_backup",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "backup_storage_path",
+      "fieldtype": "Data",
+      "label": "Backup Storage Path",
+      "default": "backups/"
+    },
+    {
+      "fieldname": "section_github",
+      "fieldtype": "Section Break",
+      "label": "GitHub Integration"
+    },
+    {
+      "default": "0",
+      "fieldname": "enable_github_integration",
+      "fieldtype": "Check",
+      "label": "Enable GitHub Integration"
+    },
+    {
+      "fieldname": "github_token",
+      "fieldtype": "Password",
+      "label": "GitHub Token"
+    },
+    {
+      "fieldname": "column_break_github",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "github_repo",
+      "fieldtype": "Data",
+      "label": "GitHub Repository (owner/repo)"
+    },
+    {
+      "fieldname": "section_modes",
+      "fieldtype": "Section Break",
+      "label": "Publish Modes"
+    },
+    {
+      "default": "0",
+      "fieldname": "quick_publish_skip_confirm",
+      "fieldtype": "Check",
+      "label": "Quick Mode Skips Confirmation Dialogs"
+    }
+  ],
+  "issingle": 1,
+  "links": [],
+  "modified": "2026-07-26 11:27:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Developer Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

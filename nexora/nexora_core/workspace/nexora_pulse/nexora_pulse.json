@@ -6,6 +6,10 @@
     {
       "custom_block_name": "Nexora Inventory",
       "label": "Inventory"
+    },
+    {
+      "custom_block_name": "Developer Center",
+      "label": "Developer Center"
     }
   ],
   "docstatus": 0,
@@ -121,6 +125,14 @@
       "label": "Customers",
       "icon": "fa fa-user",
       "color": "#F1948A",
+      "doc_view": "List"
+    },
+    {
+      "type": "DocType",
+      "link_to": "Nexora Update History",
+      "label": "Developer Center",
+      "icon": "fa fa-code",
+      "color": "#6F42C1",
       "doc_view": "List"
     }
   ],

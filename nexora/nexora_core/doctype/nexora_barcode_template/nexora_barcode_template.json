@@ -1,0 +1,231 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 14:50:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_template_info",
+    "template_name",
+    "label_size",
+    "column_break_1",
+    "barcode_type",
+    "orientation",
+    "section_design",
+    "show_logo",
+    "show_barcode",
+    "show_qr",
+    "column_break_2",
+    "show_arabic_name",
+    "show_english_name",
+    "show_item_code",
+    "show_selling_price",
+    "show_purchase_price",
+    "show_currency",
+    "show_brand",
+    "show_warehouse",
+    "show_batch",
+    "show_serial",
+    "show_expiry",
+    "show_custom_field",
+    "custom_field_name",
+    "section_company",
+    "company",
+    "column_break_3",
+    "is_default",
+    "visibility"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_template_info",
+      "fieldtype": "Section Break",
+      "label": "Template Information"
+    },
+    {
+      "fieldname": "template_name",
+      "fieldtype": "Data",
+      "label": "Template Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "label_size",
+      "fieldtype": "Select",
+      "label": "Label Size",
+      "options": "40x20\n50x30\n60x40\n70x50\n80x50\n100x50\nCustom",
+      "default": "40x20",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "barcode_type",
+      "fieldtype": "Select",
+      "label": "Barcode Type",
+      "options": "Code128\nCode39\nEAN13\nEAN8\nUPC\nQR Code\nPDF417\nData Matrix",
+      "default": "Code128",
+      "reqd": 1
+    },
+    {
+      "fieldname": "orientation",
+      "fieldtype": "Select",
+      "label": "Orientation",
+      "options": "Portrait\nLandscape",
+      "default": "Portrait"
+    },
+    {
+      "fieldname": "section_design",
+      "fieldtype": "Section Break",
+      "label": "Label Designer"
+    },
+    {
+      "fieldname": "show_logo",
+      "fieldtype": "Check",
+      "label": "Show Company Logo",
+      "default": 1
+    },
+    {
+      "fieldname": "show_barcode",
+      "fieldtype": "Check",
+      "label": "Show Barcode",
+      "default": 1
+    },
+    {
+      "fieldname": "show_qr",
+      "fieldtype": "Check",
+      "label": "Show QR Code",
+      "default": 0
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "show_arabic_name",
+      "fieldtype": "Check",
+      "label": "Show Arabic Name",
+      "default": 1
+    },
+    {
+      "fieldname": "show_english_name",
+      "fieldtype": "Check",
+      "label": "Show English Name",
+      "default": 1
+    },
+    {
+      "fieldname": "show_item_code",
+      "fieldtype": "Check",
+      "label": "Show Item Code",
+      "default": 1
+    },
+    {
+      "fieldname": "show_selling_price",
+      "fieldtype": "Check",
+      "label": "Show Selling Price",
+      "default": 1
+    },
+    {
+      "fieldname": "show_purchase_price",
+      "fieldtype": "Check",
+      "label": "Show Purchase Price",
+      "default": 0
+    },
+    {
+      "fieldname": "show_currency",
+      "fieldtype": "Check",
+      "label": "Show Currency",
+      "default": 1
+    },
+    {
+      "fieldname": "show_brand",
+      "fieldtype": "Check",
+      "label": "Show Brand",
+      "default": 0
+    },
+    {
+      "fieldname": "show_warehouse",
+      "fieldtype": "Check",
+      "label": "Show Warehouse",
+      "default": 0
+    },
+    {
+      "fieldname": "show_batch",
+      "fieldtype": "Check",
+      "label": "Show Batch",
+      "default": 0
+    },
+    {
+      "fieldname": "show_serial",
+      "fieldtype": "Check",
+      "label": "Show Serial No",
+      "default": 0
+    },
+    {
+      "fieldname": "show_expiry",
+      "fieldtype": "Check",
+      "label": "Show Expiry Date",
+      "default": 0
+    },
+    {
+      "fieldname": "show_custom_field",
+      "fieldtype": "Check",
+      "label": "Show Custom Field"
+    },
+    {
+      "fieldname": "custom_field_name",
+      "fieldtype": "Data",
+      "label": "Custom Field Name"
+    },
+    {
+      "fieldname": "section_company",
+      "fieldtype": "Section Break",
+      "label": "Company Settings"
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_3",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "label": "Set as Default"
+    },
+    {
+      "fieldname": "visibility",
+      "fieldtype": "Select",
+      "label": "Visibility",
+      "options": "Global\nCompany",
+      "default": "Global"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 14:50:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Barcode Template",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

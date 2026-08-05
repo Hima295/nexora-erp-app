@@ -209,6 +209,70 @@ window.NexoraDashboard.SETTINGS_ITEMS = [
     { key: "stock-settings", icon: "box", color: "gray", title: "Stock Settings", desc: "Inventory behaviour" }
 ];
 
+// ------------------------------------------------------------------
+// Nexora Service Layer — the ONLY way Nexora talks to the backend.
+// Wraps public Frappe REST APIs so every module (Pricing, Shipments,
+// Exchange, Settings and the future Sales/Inventory/Purchasing/
+// Accounting modules) shares one stable data contract.
+// ------------------------------------------------------------------
+window.NexoraDashboard.Services = {
+    _call(method, args) {
+        try {
+            return frappe.call({ method, args }).then((r) => (r && r.message) || null);
+        } catch (e) {
+            return Promise.reject(e);
+        }
+    },
+    list(doctype, o) {
+        o = o || {};
+        return this._call("frappe.client.get_list", {
+            doctype,
+            fields: o.fields || ["*"],
+            filters: o.filters || [],
+            order_by: o.order_by || "modified desc",
+            limit_page_length: o.limit || 20,
+            limit_start: o.start || 0,
+            as_dict: 1
+        });
+    },
+    count(doctype, filters) {
+        return this._call("frappe.client.get_count", { doctype, filters: filters || [] });
+    },
+    get(doctype, name) {
+        return this._call("frappe.client.get", { doctype, name });
+    },
+    insert(doctype, doc) {
+        return this._call("frappe.client.insert", { doc: Object.assign({ doctype }, doc || {}) });
+    },
+    setValue(doctype, name, fieldname) {
+        return this._call("frappe.client.set_value", { doctype, name, fieldname });
+    },
+    save(doc) {
+        return this._call("frappe.client.save", { doc });
+    },
+    submit(doc) {
+        return this._call("frappe.client.submit", { doc });
+    },
+    cancel(doc) {
+        return this._call("frappe.client.cancel", { doc });
+    },
+    delete(doctype, name) {
+        return this._call("frappe.client.delete", { doctype, name });
+    },
+    meta(doctype) {
+        return this._call("frappe.client.get_list", {
+            doctype: "DocField",
+            fields: ["fieldname", "label", "fieldtype", "options", "default", "reqd", "read_only", "hidden", "description"],
+            filters: { parent: doctype },
+            order_by: "idx asc",
+            limit_page_length: 0
+        });
+    }
+};
+
+const NX_ISO_CSS_URL = "/assets/nexora/nexora_dashboard/css/nexora_isolation.css?v=5";
+let __nxIsoCssCache = null;
+
 window.NexoraDashboard.App = class {
     constructor(wrapper) {
         this.wrapper = (typeof $ !== "undefined" && $(wrapper).get(0)) || wrapper || document.body;
@@ -334,7 +398,7 @@ window.NexoraDashboard.App = class {
                 <main class="nx-main"><div class="nx-loading">${this.t("Loading dashboard")}</div></main>
                 <footer class="nx-app-foot">
                     <span class="nx-app-foot-brand">Nexora Enterprise <b>v4.0</b></span>
-                    <span class="nx-app-foot-right"><span>${this.t("Nexora")}</span><i class="nx-app-foot-dot"></i><span>${this.t("Powered by ERPNext")}</span></span>
+                    <span class="nx-app-foot-right"><span>${this.t("Nexora")}</span><i class="nx-app-foot-dot"></i><span>${this.t("Workspace")}</span></span>
                 </footer>
             </div>
         `;
@@ -398,9 +462,13 @@ window.NexoraDashboard.App = class {
             if (refreshEl) {
                 if (this.state.embed && this.state.embed.type === "report" && !this.state.embed.rx) {
                     const qr = this.state.__report || frappe.query_report;
-                    if (qr && qr.refresh) {
-                        if (qr.setup_progress_bar) qr.setup_progress_bar();
-                        qr.refresh();
+                    if (this.__reportReady(qr)) {
+                        try {
+                            if (qr.setup_progress_bar) qr.setup_progress_bar();
+                            qr.refresh();
+                        } catch (e) {}
+                    } else {
+                        this.__updateReportMeta();
                     }
                 } else {
                     const frame = this.main && this.main.querySelector(".nx-embed-frame");
@@ -410,8 +478,7 @@ window.NexoraDashboard.App = class {
             }
             const sEl = e.target.closest("[data-sroute]");
             if (sEl) {
-                const src = window.NexoraDashboard.SETTINGS_ROUTES[sEl.getAttribute("data-sroute")];
-                if (src) this.openEmbed({ src, title: this.t("Settings"), icon: "settings", color: "gray" });
+                this.renderSettingsPage(sEl.getAttribute("data-sroute"));
                 return;
             }
             const userEl = e.target.closest("[data-useraction]");
@@ -649,28 +716,122 @@ window.NexoraDashboard.App = class {
     }
 
     // ---------------------------------------------------------------- embedded ERPNext (inside Nexora)
+    ensureIsolationCss(doc) {
+        const syncLink = () => {
+            if (doc.getElementById("nx-isolation-css")) return;
+            const lk = doc.createElement("link");
+            lk.id = "nx-isolation-css";
+            lk.rel = "stylesheet";
+            lk.href = NX_ISO_CSS_URL;
+            doc.head.appendChild(lk);
+        };
+        const injectStyle = (text) => {
+            let el = doc.getElementById("nx-isolation-style");
+            if (!el) {
+                el = doc.createElement("style");
+                el.id = "nx-isolation-style";
+                doc.head.appendChild(el);
+            }
+            el.textContent = text;
+        };
+        syncLink();
+        if (__nxIsoCssCache) { injectStyle(__nxIsoCssCache); return; }
+        try {
+            fetch(NX_ISO_CSS_URL, { credentials: "same-origin" })
+                .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
+                .then((t) => { __nxIsoCssCache = t; injectStyle(t); })
+                .catch(() => {});
+        } catch (e) {}
+    }
+
     attachIframeStrip(frame) {
         if (!frame) return;
-        frame.addEventListener("load", () => {
+        const STRIP_CSS = `
+            html, body { height:100% !important; min-height:100% !important; margin:0 !important; padding:0 !important; background:#f6f7fb !important; }
+            html { overflow:hidden !important; }
+            body { overflow:auto !important; overscroll-behavior:contain !important; color:#141a2e !important; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif !important; }
+            .desk-sidebar, .desk-sidebar-items, .desktop-sidebar, .desk-navbar, .navbar, .navbar-fixed, .navbar-collapse,
+            .layout-side-section, .standard-sidebar, .form-sidebar, .form-sidebar-sticky, .main-menu,
+            .workspace-sidebar, .workspace-header, .workspace-footer, .workspace-section-header,
+            .desk-toolbar, .window-actions, .search-modal, .search-dialog, .navbar-header, .navbar-right,
+            .module-sidebar-nav, .module-links, .sidebar-menu, .breadcrumb,
+            .layout-footer, .desktop-layout, .widget-container .page-head, #page-Workspaces .page-head,
+            #page-Workspaces .workspace-body, .sidebar-toggle-btn, .form-toolbar,
+            .indicator-pill-round, .page-title, .page-toolbar {
+                display:none !important;
+            }
+            .desk-loader, .frappe-loader, .loading-spinner, .freeze.freeze-cover {
+                display:none !important;
+            }
+            .layout-main-section-wrapper, .layout-main-section, .main-section, .page-content,
+            .page-wrapper, .page-container, #page-container, #body, .content, .row.layout-main {
+                margin:0 !important; padding:0 !important; width:100% !important; max-width:none !important;
+                height:100% !important; min-height:100% !important; border:0 !important;
+                box-shadow:none !important; background:transparent !important; overflow:visible !important;
+            }
+            .layout-main-section-wrapper > .row, .layout-main-section .row {
+                width:100% !important; max-width:none !important; margin:0 !important;
+            }
+            .layout-main-section .listview-container, .layout-main-section .form-layout {
+                padding:16px 22px 32px !important;
+            }
+            .list-row-like, .like-action, .like-icon, .list-row-comment, .comment-icon,
+            .comment-count, .list-row .level-right .icon-btn {
+                display:none !important;
+            }
+        `;
+        const apply = () => {
             try {
                 const doc = frame.contentDocument;
-                if (!doc) return;
+                if (!doc || !doc.head || !doc.body) return;
+                doc.__nxIsolated = true;
+
                 let st = doc.getElementById("nx-embed-strip");
                 if (!st) {
                     st = doc.createElement("style");
                     st.id = "nx-embed-strip";
-                    st.textContent = `
-                        .desk-sidebar, .navbar, .layout-side-section, .form-sidebar, .form-sidebar-sticky, .modal-backdrop { display:none !important; }
-                        body { background: transparent; }
-                        .layout-main-section, .main-section { margin:0 !important; padding:0 !important; width:100% !important; max-width:none !important; }
-                        .page-container { padding: 0 !important; }
-                        #page-container { margin: 0 !important; }
-                        .page-head { padding: 10px 14px !important; }
-                        .listview-container { padding: 8px 14px !important; }
-                        .widget { margin-bottom: 8px !important; }
-                    `;
+                    st.textContent = STRIP_CSS;
                     doc.head.appendChild(st);
                 }
+                this.ensureIsolationCss(doc);
+
+                const clean = () => {
+                    if (!doc || !doc.body) return;
+                    doc.querySelectorAll(".desk-loader, .frappe-loader, .loading-spinner").forEach((n) => {
+                        try { n.remove(); } catch (e) {}
+                    });
+                };
+                clean();
+
+                if (!doc.__nxMo) {
+                    doc.__nxMo = true;
+                    const M = doc.defaultView.MutationObserver || window.MutationObserver;
+                    if (M) {
+                        const mo = new M((muts) => {
+                            for (const m of muts) {
+                                if (!m.addedNodes) continue;
+                                for (const n of m.addedNodes) {
+                                    if (!n || n.nodeType !== 1) continue;
+                                    if (n.matches && n.matches(".desk-loader, .frappe-loader, .loading-spinner")) {
+                                        try { n.remove(); } catch (e) {}
+                                    } else if (n.matches && n.matches(".desk-sidebar, .desk-navbar, .navbar, .layout-side-section, .form-sidebar, .standard-sidebar, .breadcrumb, .layout-footer")) {
+                                        n.style.display = "none";
+                                    } else if (n.querySelectorAll) {
+                                        n.querySelectorAll(".desk-sidebar, .desk-navbar, .navbar, .layout-side-section, .form-sidebar, .standard-sidebar, .breadcrumb, .layout-footer, .desk-loader, .frappe-loader, .loading-spinner").forEach((el) => {
+                                            if (el.classList && (el.classList.contains("desk-loader") || el.classList.contains("frappe-loader") || el.classList.contains("loading-spinner"))) {
+                                                try { el.remove(); } catch (e) {}
+                                            } else {
+                                                el.style.display = "none";
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                        mo.observe(doc.body, { childList: true, subtree: true });
+                    }
+                }
+
                 if (!doc.__nxEscLinked) {
                     doc.__nxEscLinked = true;
                     doc.addEventListener("keydown", (ev) => {
@@ -682,9 +843,20 @@ window.NexoraDashboard.App = class {
                     }, true);
                 }
             } catch (e) {
-                // cross-origin protection should never fire here (same origin)
+                // same-origin embed; cross-origin guard never fires here
             }
-        });
+        };
+
+        frame.addEventListener("load", () => setTimeout(apply, 0));
+        frame.addEventListener("DOMContentLoaded", () => setTimeout(apply, 0));
+        const poll = setInterval(() => {
+            try {
+                if (!frame.isConnected) { clearInterval(poll); return; }
+                const d = frame.contentDocument;
+                if (d && d.body && d.body.childElementCount > 0) { apply(); clearInterval(poll); }
+            } catch (e) { clearInterval(poll); }
+        }, 400);
+        setTimeout(() => clearInterval(poll), 20000);
     }
 
     openEmbed({ src, title, icon, color, view, reportCat }) {
@@ -697,7 +869,7 @@ window.NexoraDashboard.App = class {
                     <span class="nx-embed-ic nx-ic-${color || "blue"}">${this.ic(icon || "file", 15)}</span>
                     <span class="nx-embed-title">${this.esc(title || "")}</span>
                     ${reportCat ? `<span class="nx-badge nx-badge-indigo nx-embed-cat">${this.esc(reportCat)}</span>` : ""}
-                    <span class="nx-embed-note">${this.esc(this.t("Nexora") + " · " + this.t("Embedded ERPNext"))}</span>
+                    <span class="nx-embed-note">${this.esc(this.t("Nexora") + " · " + this.t("Workspace"))}</span>
                     <button class="nx-icon-btn nx-embed-refresh" data-embedrefresh title="${this.esc(this.t("Refresh report"))}">${this.ic("refresh", 15)}</button>
                 </div>
                 <iframe class="nx-embed-frame" src="${this.esc(src)}" loading="eager"></iframe>
@@ -785,17 +957,15 @@ window.NexoraDashboard.App = class {
                     </div>
                 </div>
                 <div class="nx-report-actions">
-                    <button class="nx-raction" data-embedaction="refresh" title="${this.esc(this.t("Refresh report"))}">${this.ic("refresh", 14)}<span>${this.esc(this.t("Refresh"))}</span></button>
-                    <button class="nx-raction is-active" data-embedaction="filters" title="${this.esc(this.t("Toggle filters"))}">${this.ic("filter", 14)}<span>${this.esc(this.t("Filters"))}</span></button>
-                    <span class="nx-raction-sep"></span>
-                    <button class="nx-raction" data-embedaction="export-excel" title="${this.esc(this.t("Export Excel"))}">${this.ic("download", 14)}<span>${this.esc(this.t("Export Excel"))}</span></button>
-                    <button class="nx-raction" data-embedaction="export-pdf" title="${this.esc(this.t("Export PDF"))}">${this.ic("file", 14)}<span>${this.esc(this.t("Export PDF"))}</span></button>
+                    <div class="nx-raction-wrap">
+                        <button class="nx-raction" data-embedaction="export" title="${this.esc(this.t("Export report"))}" aria-haspopup="true" aria-expanded="false">${this.ic("download", 14)}<span>${this.esc(this.t("Export"))}</span>${this.ic("chevron-down", 10)}</button>
+                    </div>
                     <button class="nx-raction" data-embedaction="print" title="${this.esc(this.t("Print"))}">${this.ic("print", 14)}<span>${this.esc(this.t("Print"))}</span></button>
+                    <button class="nx-raction" data-embedaction="density" title="${this.esc(this.t("Toggle density"))}">${this.ic("maximize", 14)}<span>${this.esc(this.t("Density"))}</span></button>
                     <span class="nx-raction-grow"></span>
-                    <button class="nx-raction" data-embedaction="share" title="${this.esc(this.t("Share"))}">${this.ic("share", 14)}<span>${this.esc(this.t("Share"))}</span></button>
-                    <button class="nx-raction" data-embedaction="save" title="${this.esc(this.t("Save View"))}">${this.ic("save", 14)}<span>${this.esc(this.t("Save View"))}</span></button>
-                    <button class="nx-raction" data-embedaction="fullscreen" title="${this.esc(this.t("Fullscreen"))}">${this.ic("maximize", 14)}<span>${this.esc(this.t("Fullscreen"))}</span></button>
-                    <button class="nx-raction nx-raction-danger" data-embedaction="reset" title="${this.esc(this.t("Reset"))}">${this.ic("rotate", 14)}<span>${this.esc(this.t("Reset"))}</span></button>
+                    <div class="nx-raction-wrap">
+                        <button class="nx-raction" data-embedaction="more" title="${this.esc(this.t("More actions"))}" aria-haspopup="true" aria-expanded="false">${this.ic("more-horizontal", 14)}<span>${this.esc(this.t("More"))}</span>${this.ic("chevron-down", 10)}</button>
+                    </div>
                 </div>
                 <div class="nx-report-filters" data-report-filters>
                     <div class="nx-report-filters-head">
@@ -971,8 +1141,10 @@ window.NexoraDashboard.App = class {
                 return;
             }
             if (attempts === 2 || attempts === 3) {
-                if (qr.setup_progress_bar) qr.setup_progress_bar();
-                qr.refresh();
+                if (Array.isArray(qr.filters) && qr.refresh) {
+                    if (qr.setup_progress_bar) qr.setup_progress_bar();
+                    try { qr.refresh(); } catch (e) {}
+                }
                 setTimeout(attempt, 8000);
                 return;
             }
@@ -1103,15 +1275,19 @@ window.NexoraDashboard.App = class {
         });
     }
 
+    __reportReady(q) {
+        return !!(q && q.refresh && Array.isArray(q.filters));
+    }
+
     __runReportAction(qr, act, btn) {
         const q = qr || frappe.query_report;
         switch (act) {
             case "refresh":
-                if (q && q.refresh) {
+                this.state.__reportRefreshedAt = new Date();
+                this.__updateReportMeta();
+                if (this.__reportReady(q)) {
                     if (q.setup_progress_bar) q.setup_progress_bar();
-                    this.state.__reportRefreshedAt = new Date();
-                    this.__updateReportMeta();
-                    q.refresh();
+                    try { q.refresh(); } catch (e) {}
                     setTimeout(() => this.__updateReportMeta(), 1500);
                 }
                 break;
@@ -1119,27 +1295,137 @@ window.NexoraDashboard.App = class {
                 this.__toggleReportFilters();
                 break;
             case "export-excel":
+                this.__closeEmbedPopover();
                 this.__reportExport(q, "Excel");
                 break;
             case "export-pdf":
+                this.__closeEmbedPopover();
                 this.__reportExport(q, "PDF");
                 break;
             case "print":
+                this.__closeEmbedPopover();
                 this.__reportPrint(q);
                 break;
             case "fullscreen":
+                this.__closeEmbedPopover();
                 this.__toggleReportFullscreen();
                 break;
             case "share":
+                this.__closeEmbedPopover();
                 this.__reportShare(q, btn);
                 break;
             case "save":
+                this.__closeEmbedPopover();
                 this.__reportSaveView(q);
                 break;
             case "reset":
+                this.__closeEmbedPopover();
                 this.__reportReset(q);
                 break;
+            case "export":
+                this.__toggleEmbedPopover("export", btn, [
+                    { act: "export-excel", ic: "file-spreadsheet", label: this.t("Excel"), hint: this.t("Download spreadsheet") },
+                    { act: "export-pdf", ic: "file-text", label: this.t("PDF"), hint: this.t("Download as PDF") }
+                ]);
+                break;
+            case "more":
+                this.__toggleEmbedPopover("more", btn, [
+                    { act: "refresh", ic: "refresh", label: this.t("Refresh") },
+                    { act: "filters", ic: "filter", label: this.t("Filters") },
+                    { sep: true },
+                    { act: "share", ic: "share", label: this.t("Share") },
+                    { act: "save", ic: "save", label: this.t("Save View") },
+                    { act: "fullscreen", ic: "maximize", label: this.t("Fullscreen") },
+                    { sep: true },
+                    { act: "reset", ic: "rotate", label: this.t("Reset"), danger: true }
+                ]);
+                break;
+            case "density":
+                this.__toggleReportDensity();
+                break;
         }
+    }
+
+    __toggleReportDensity() {
+        const root = this.main && this.main.querySelector("[data-report-viewer]");
+        if (!root) return;
+        this.state.__reportDense = !this.state.__reportDense;
+        root.classList.toggle("nx-report-dense", this.state.__reportDense);
+    }
+
+    __toggleEmbedPopover(kind, btn, items) {
+        this.__closeEmbedPopover();
+        const wrap = btn && btn.closest(".nx-raction-wrap");
+        const rec = (btn || wrap).getBoundingClientRect();
+        const pop = document.createElement("div");
+        pop.className = "nx-rx-pop nx-report-pop";
+        pop.setAttribute("data-embedpop", kind);
+        const row = (it) => {
+            if (it.sep) {
+                const s = document.createElement("div");
+                s.className = "nx-rx-pop-sep";
+                return s;
+            }
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "nx-rx-pop-item" + (it.danger ? " is-danger" : "");
+            b.insertAdjacentHTML("beforeend", this.ic(it.ic, 14));
+            const label = document.createElement("span");
+            label.textContent = it.label;
+            b.appendChild(label);
+            if (it.hint) {
+                const h = document.createElement("span");
+                h.className = "nx-rx-pop-hint";
+                h.textContent = it.hint;
+                b.appendChild(h);
+            }
+            b.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.__closeEmbedPopover();
+                this.__runReportAction(frappe.query_report, it.act, btn);
+            });
+            return b;
+        };
+        items.forEach((it) => pop.appendChild(row(it)));
+        document.body.appendChild(pop);
+        this.state.__embedPop = pop;
+        const pad = 8, gap = 6;
+        let top = rec.bottom + gap;
+        if (top + pop.offsetHeight + pad > window.innerHeight) top = Math.max(pad, rec.top - pop.offsetHeight - gap);
+        let left = Math.min(rec.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - pad);
+        left = Math.max(pad, left);
+        pop.style.top = top + "px";
+        pop.style.left = left + "px";
+        if (btn) btn.setAttribute("aria-expanded", "true");
+        this.__bindEmbedPopoverOutside(pop, btn);
+    }
+
+    __closeEmbedPopover() {
+        const pop = this.state && this.state.__embedPop;
+        if (pop) {
+            const btn = pop.__anchor;
+            if (btn) btn.setAttribute("aria-expanded", "false");
+            pop.remove();
+        }
+        this.state.__embedPop = null;
+    }
+
+    __bindEmbedPopoverOutside(pop, btn) {
+        pop.__anchor = btn;
+        if (this.__embedPopoverDocBound) return;
+        this.__embedPopoverDocBound = true;
+        const onDoc = (e) => {
+            if (!this.state.__embedPop) { document.removeEventListener("click", onDoc); this.__embedPopoverDocBound = false; return; }
+            if (this.state.__embedPop.contains(e.target)) return;
+            if (btn && btn.contains(e.target)) return;
+            this.__closeEmbedPopover();
+        };
+        const onKey = (e) => {
+            if (e.key === "Escape") this.__closeEmbedPopover();
+        };
+        document.addEventListener("click", onDoc);
+        document.addEventListener("keydown", onKey);
+        this.__embedPopoverDocBound = true;
     }
 
     __toggleReportFilters(force) {
@@ -1159,7 +1445,7 @@ window.NexoraDashboard.App = class {
     }
 
     __reportExport(q, format) {
-        if (q && typeof q.get_export_dialog === "function") {
+        if (this.__reportReady(q) && typeof q.get_export_dialog === "function") {
             try { q.get_export_dialog(format); return; } catch (e) {}
         }
         const btn = this.__findReportBtn(format === "PDF" ? ["Print", "PDF"] : ["Export"]);
@@ -1184,7 +1470,7 @@ window.NexoraDashboard.App = class {
     }
 
     __reportReset(q) {
-        if (!q || !q.filters || !q.filters.length) return;
+        if (!q || !Array.isArray(q.filters) || !q.filters.length) return;
         q.filters.forEach((f) => {
             try {
                 if (!f || !f.df) return;
@@ -1194,7 +1480,7 @@ window.NexoraDashboard.App = class {
         });
         if (q.refresh) {
             if (q.setup_progress_bar) q.setup_progress_bar();
-            q.refresh();
+            try { q.refresh(); } catch (e) {}
         }
     }
 
@@ -1372,7 +1658,7 @@ window.NexoraDashboard.App = class {
         let html = this.pageHeader({
             icon: "file", color: "indigo",
             title: this.t("Reports Center"),
-            subtitle: this.t("Enterprise Report Hub — every ERPNext report, rendered inside Nexora"),
+            subtitle: this.t("Enterprise Report Hub — every report, rendered inside Nexora"),
             crumb: [this.t("Nexora"), this.t("Reports Center")]
         });
         html += `<div class="nx-hub-toolbar">
@@ -1467,16 +1753,20 @@ window.NexoraDashboard.App = class {
     renderCenter(centerKey) {
         const c = window.NexoraDashboard.CENTERS[centerKey];
         if (!c) { this.render(this.state.data); return; }
+        if (centerKey === "barcode") {
+            this.renderBarcode();
+            return;
+        }
+        if (centerKey === "pricing" || centerKey === "shipments" || centerKey === "exchange") {
+            this.renderCenterList(centerKey);
+            return;
+        }
         let html = this.pageHeader({
             icon: c.icon, color: c.color,
             title: this.t(c.title),
             subtitle: this.t(c.subtitle),
             crumb: [this.t("Nexora"), this.t(c.title)]
         });
-        if (centerKey === "barcode") {
-            this.renderBarcode();
-            return;
-        }
         html += `<div class="nx-embed nx-embed-inline">
             <div class="nx-embed-frame-wrap">
                 <iframe class="nx-embed-frame" src="${this.esc(c.embed)}" loading="eager"></iframe>
@@ -1484,6 +1774,793 @@ window.NexoraDashboard.App = class {
         </div>`;
         this.main.innerHTML = `<div class="nx-view">${html}</div>`;
         this.attachIframeStrip(this.main.querySelector(".nx-embed-frame"));
+    }
+
+    // ---------------------------------------------------------------- native center lists (no iframe)
+    centerListConfig(key) {
+        const c = window.NexoraDashboard.CENTERS[key] || {};
+        const configs = {
+            pricing: {
+                doctype: "Item Price",
+                columns: [
+                    { f: "item_code", label: this.t("Item Code"), type: "link" },
+                    { f: "price_list", label: this.t("Price List"), type: "link" },
+                    { f: "price_list_rate", label: this.t("Rate"), type: "currency", cur: "currency" },
+                    { f: "currency", label: this.t("Currency"), type: "text" },
+                    { f: "valid_from", label: this.t("Valid From"), type: "date" },
+                    { f: "valid_upto", label: this.t("Valid Upto"), type: "date" }
+                ]
+            },
+            shipments: {
+                doctype: "Delivery Note",
+                columns: [
+                    { f: "name", label: this.t("Delivery Note"), type: "link" },
+                    { f: "customer", label: this.t("Customer"), type: "link" },
+                    { f: "posting_date", label: this.t("Posting Date"), type: "date" },
+                    { f: "total_net_weight", label: this.t("Net Weight"), type: "number" },
+                    { f: "grand_total", label: this.t("Amount"), type: "currency", cur: "currency" },
+                    { f: "status", label: this.t("Status"), type: "status" }
+                ]
+            },
+            exchange: {
+                doctype: "Currency Exchange",
+                columns: [
+                    { f: "name", label: this.t("Rate ID"), type: "link" },
+                    { f: "date", label: this.t("Date"), type: "date" },
+                    { f: "from_currency", label: this.t("From"), type: "text" },
+                    { f: "to_currency", label: this.t("To"), type: "text" },
+                    { f: "exchange_rate", label: this.t("Rate"), type: "number" }
+                ]
+            }
+        };
+        const conf = configs[key];
+        if (!conf) return { doctype: "", columns: [] };
+        conf.key = key;
+        conf.icon = c.icon || "file";
+        conf.color = c.color || "blue";
+        conf.title = c.title || key;
+        conf.subtitle = c.subtitle || "";
+        conf.addLabel = "New " + conf.doctype;
+        return conf;
+    }
+
+    renderCenterList(key) {
+        const conf = this.centerListConfig(key);
+        this.renderNativeList(conf);
+    }
+
+    renderNativeList(conf) {
+        if (!conf) return;
+        const canNew = !!(this.newFields(conf.doctype) || []).length;
+        this.state.list = { key: conf.key, q: "", page: 1, pageLength: 20, pages: 1, total: 0, rows: [], sel: {}, conf, loading: false };
+        let html = this.pageHeader({
+            icon: conf.icon, color: conf.color,
+            title: this.t(conf.title),
+            subtitle: this.t(conf.subtitle || ""),
+            crumb: [this.t("Nexora"), this.t(conf.title)]
+        });
+        html += `<div class="nx-clist" data-clist>
+            <div class="nx-clist-toolbar">
+                <div class="nx-clist-search">
+                    <span class="nx-search-ic">${this.ic("search", 15)}</span>
+                    <input class="nx-input" data-clist-q type="text" autocomplete="off" spellcheck="false" placeholder="${this.esc(this.t("Search") + "…")}" />
+                </div>
+                <div class="nx-clist-actions">
+                    <button class="nx-btn nx-btn-secondary nx-btn-sm" data-clist-refresh title="${this.esc(this.t("Refresh"))}">${this.ic("refresh", 14)} ${this.t("Refresh")}</button>
+                    ${canNew ? `<button class="nx-btn nx-btn-primary nx-btn-sm" data-clist-new>${this.ic("plus", 14)} ${this.t("New")}</button>` : ""}
+                </div>
+            </div>
+            <div class="nx-clist-card">
+                <div class="nx-clist-meta">
+                    <span class="nx-clist-count" data-clist-count>${this.t("Loading")}…</span>
+                    <span class="nx-clist-selection" data-clist-selection hidden></span>
+                </div>
+                <div class="nx-table-wrap">
+                    <table class="nx-table nx-clist-table">
+                        <thead>
+                            <tr>
+                                <th class="nx-col-check"><span class="nx-check" data-clist-checkall role="checkbox" tabindex="0" title="${this.esc(this.t("Select all"))}"></span></th>
+                                ${conf.columns.map((col) => `<th class="nx-td-${col.type}">${this.esc(col.label)}</th>`).join("")}
+                            </tr>
+                        </thead>
+                        <tbody data-clist-body>
+                            <tr><td class="nx-clist-loading" colspan="99">${this.ic("refresh", 16)} ${this.t("Loading")}…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="nx-clist-footer"><div class="nx-clist-pager" data-clist-pager></div></div>
+            </div>
+        </div>`;
+        this.main.innerHTML = `<div class="nx-view">${html}</div>`;
+        this.bindCenterList();
+        this.loadCenterList();
+    }
+
+    bindCenterList() {
+        const self = this;
+        const root = this.main;
+        if (!root) return;
+        root.addEventListener("click", (e) => {
+            const st = this.state.list;
+            if (!st) return;
+            const newBtn = e.target.closest("[data-clist-new]");
+            if (newBtn) { this.openNewRecord(st.conf); return; }
+            const ref = e.target.closest("[data-clist-refresh]");
+            if (ref) { this.loadCenterList(); return; }
+            const check = e.target.closest("[data-clist-check]");
+            if (check) { e.stopPropagation(); this.toggleListSel(check.getAttribute("data-clist-check")); return; }
+            const all = e.target.closest("[data-clist-checkall]");
+            if (all) { this.toggleListSel(null, Object.keys(st.sel).length === st.rows.length && st.rows.length > 0 ? false : true); return; }
+            const open = e.target.closest("[data-clist-open-sel]");
+            if (open) {
+                const first = st.rows.find((r) => st.sel[r.name]);
+                if (first) this.openRecord(st.conf.doctype, first.name);
+                return;
+            }
+            const clear = e.target.closest("[data-clist-clear]");
+            if (clear) { st.sel = {}; this.updateListSelUI(); return; }
+            const page = e.target.closest("[data-clist-page]");
+            if (page) {
+                const p = Number(page.getAttribute("data-clist-page")) || 1;
+                if (p >= 1 && p <= st.pages && p !== st.page) { st.page = p; this.loadCenterList(); }
+                return;
+            }
+            const row = e.target.closest("[data-clist-row]");
+            if (row) this.openRecord(st.conf.doctype, row.getAttribute("data-clist-row"));
+        });
+        const q = root.querySelector("[data-clist-q]");
+        if (q) {
+            let timer = null;
+            q.addEventListener("input", () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    const st = this.state.list;
+                    if (!st) return;
+                    st.q = q.value.trim();
+                    st.page = 1;
+                    this.loadCenterList();
+                }, 350);
+            });
+            q.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    clearTimeout(timer);
+                    const st = this.state.list;
+                    if (!st) return;
+                    st.q = q.value.trim();
+                    st.page = 1;
+                    this.loadCenterList();
+                }
+            });
+        }
+    }
+
+    nxListApi(method, args) {
+        try {
+            return frappe.call({ method, args }).then((r) => (r && r.message) || []);
+        } catch (e) {
+            return Promise.reject(e);
+        }
+    }
+
+    loadCenterList() {
+        const st = this.state.list;
+        if (!st) return;
+        const conf = st.conf;
+        const S = window.NexoraDashboard.Services;
+        st.loading = true;
+        this.renderListLoading();
+        const filters = st.q ? [["name", "like", "%" + st.q + "%"]] : [];
+        const fields = ["name"].concat(conf.columns.map((c) => c.f));
+        Promise.all([
+            S.count(conf.doctype, filters),
+            S.list(conf.doctype, { fields, filters, order_by: conf.order_by || "modified desc", limit: st.pageLength, start: (st.page - 1) * st.pageLength })
+        ]).then(([total, rows]) => {
+            st.loading = false;
+            st.total = Number(total) || 0;
+            st.rows = Array.isArray(rows) ? rows : [];
+            st.pages = Math.max(1, Math.ceil(st.total / st.pageLength));
+            if (st.page > st.pages) { st.page = st.pages; }
+            this.renderListBody();
+        }).catch(() => {
+            st.loading = false;
+            this.renderListError();
+        });
+    }
+
+    renderListLoading() {
+        const body = this.main.querySelector("[data-clist-body]");
+        const cnt = this.main.querySelector("[data-clist-count]");
+        const pgr = this.main.querySelector("[data-clist-pager]");
+        if (body) body.innerHTML = `<tr><td class="nx-clist-loading" colspan="99">${this.ic("refresh", 16)} ${this.esc(this.t("Loading"))}…</td></tr>`;
+        if (cnt) cnt.textContent = this.t("Loading") + "…";
+        if (pgr) pgr.innerHTML = "";
+    }
+
+    renderListBody() {
+        const st = this.state.list;
+        if (!st) return;
+        const conf = st.conf;
+        const body = this.main.querySelector("[data-clist-body]");
+        if (!body) return;
+        if (!st.rows.length) { this.renderListEmpty(); return; }
+        let html = "";
+        st.rows.forEach((row) => {
+            const name = String(row.name || "");
+            const sel = !!st.sel[name];
+            html += `<tr class="nx-clist-row ${sel ? "is-selected" : ""}" data-clist-row="${this.esc(name)}">
+                <td class="nx-col-check"><span class="nx-check ${sel ? "is-checked" : ""}" data-clist-check="${this.esc(name)}" role="checkbox" tabindex="0"></span></td>
+                ${conf.columns.map((col) => `<td class="nx-td-${col.type}">${this.fmtCell(col, row)}</td>`).join("")}
+            </tr>`;
+        });
+        body.innerHTML = html;
+        this.renderListCount();
+        this.renderListPager();
+    }
+
+    renderListEmpty() {
+        const st = this.state.list;
+        const body = this.main.querySelector("[data-clist-body]");
+        const cnt = this.main.querySelector("[data-clist-count]");
+        const pgr = this.main.querySelector("[data-clist-pager]");
+        if (body) body.innerHTML = `<tr><td class="nx-clist-empty" colspan="99">
+            <div class="nx-empty-ic">${this.ic("search", 26)}</div>
+            <div class="nx-empty-title">${this.esc(this.t("No records found"))}</div>
+            <div class="nx-empty-sub">${this.esc(st.q ? this.t("Nothing matches your search") : this.t("Add a record to get started"))}</div>
+        </td></tr>`;
+        if (cnt) cnt.innerHTML = `<b>0</b> ${this.t("records")}`;
+        if (pgr) pgr.innerHTML = "";
+    }
+
+    renderListError() {
+        const body = this.main.querySelector("[data-clist-body]");
+        const cnt = this.main.querySelector("[data-clist-count]");
+        const pgr = this.main.querySelector("[data-clist-pager]");
+        if (body) body.innerHTML = `<tr><td class="nx-clist-error" colspan="99">
+            <div class="nx-empty-title">${this.esc(this.t("Could not load records"))}</div>
+            <div class="nx-empty-sub">${this.esc(this.t("Please try again"))}</div>
+            <button class="nx-btn nx-btn-secondary nx-btn-sm" data-clist-refresh style="margin-top:10px">${this.ic("refresh", 14)} ${this.t("Retry")}</button>
+        </td></tr>`;
+        if (cnt) cnt.textContent = "—";
+        if (pgr) pgr.innerHTML = "";
+    }
+
+    renderListCount() {
+        const st = this.state.list;
+        const cnt = this.main.querySelector("[data-clist-count]");
+        if (!cnt) return;
+        cnt.innerHTML = `<b>${st.total}</b> ${this.t("records")}${st.q ? ` · "${this.esc(st.q)}"` : ""}`;
+    }
+
+    renderListPager() {
+        const st = this.state.list;
+        const pgr = this.main.querySelector("[data-clist-pager]");
+        if (!pgr) return;
+        if (st.pages <= 1) { pgr.innerHTML = ""; return; }
+        let html = `<button class="nx-pg" data-clist-page="${st.page - 1}" ${st.page <= 1 ? "disabled" : ""}>${this.t("Prev")}</button>`;
+        const win = [];
+        for (let p = 1; p <= st.pages; p++) {
+            if (p === 1 || p === st.pages || Math.abs(p - st.page) <= 1) win.push(p);
+        }
+        let last = 0;
+        win.forEach((p) => {
+            if (last && p - last > 1) html += `<span class="nx-pg-ellipsis">…</span>`;
+            html += `<button class="nx-pg ${p === st.page ? "is-active" : ""}" data-clist-page="${p}">${p}</button>`;
+            last = p;
+        });
+        html += `<button class="nx-pg" data-clist-page="${st.page + 1}" ${st.page >= st.pages ? "disabled" : ""}>${this.t("Next")}</button>`;
+        pgr.innerHTML = html;
+    }
+
+    fmtCell(col, row) {
+        const v = row[col.f];
+        if (v === null || v === undefined || v === "") return `<span class="nx-muted">—</span>`;
+        if (col.type === "currency") {
+            const cur = row[col.cur] || this.state.currency || "";
+            const num = Number(v);
+            const s = isNaN(num) ? String(v) : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return `<span class="nx-cell-currency">${this.esc(s)}<i>${this.esc(cur)}</i></span>`;
+        }
+        if (col.type === "number") {
+            const num = Number(v);
+            const s = isNaN(num) ? String(v) : num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            return `<span class="nx-cell-num">${this.esc(s)}</span>`;
+        }
+        if (col.type === "date") return `<span class="nx-cell-date">${this.esc(this.fmtDate(v))}</span>`;
+        if (col.type === "status") return this.statusPill(String(v));
+        if (col.type === "link") return `<span class="nx-cell-link">${this.esc(String(v))}</span>`;
+        return `<span>${this.esc(String(v))}</span>`;
+    }
+
+    fmtDate(d) {
+        const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return d;
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        return `${m[3]} ${months[Math.min(11, Math.max(0, Number(m[2]) - 1))]} ${m[1]}`;
+    }
+
+    statusPill(s) {
+        const map = { Draft: "gray", Submitted: "blue", Completed: "green", Cancelled: "red", Return: "orange", Closed: "teal", Open: "blue", "On Hold": "orange" };
+        const tone = map[s] || "gray";
+        return `<span class="nx-pill nx-pill-${tone}">${this.esc(s)}</span>`;
+    }
+
+    toggleListSel(name, force) {
+        const st = this.state.list;
+        if (!st) return;
+        const names = name ? [name] : st.rows.map((r) => r.name);
+        names.forEach((n) => {
+            if (!n) return;
+            if (force === true) st.sel[n] = 1;
+            else if (force === false) delete st.sel[n];
+            else if (st.sel[n]) delete st.sel[n];
+            else st.sel[n] = 1;
+        });
+        this.updateListSelUI();
+    }
+
+    updateListSelUI() {
+        const st = this.state.list;
+        if (!st) return;
+        const root = this.main.querySelector("[data-clist]");
+        if (!root) return;
+        const names = Object.keys(st.sel).length;
+        const selEl = root.querySelector("[data-clist-selection]");
+        const all = root.querySelector("[data-clist-checkall]");
+        if (names) {
+            if (selEl) {
+                selEl.hidden = false;
+                selEl.innerHTML = `<b>${names}</b> ${this.t("selected")} · <button class="nx-btn-link" data-clist-open-sel>${this.t("Open")}</button> · <button class="nx-btn-link" data-clist-clear>${this.t("Clear")}</button>`;
+            }
+        } else if (selEl) {
+            selEl.hidden = true;
+        }
+        if (all) all.classList.toggle("is-checked", names === st.rows.length && st.rows.length > 0);
+        const rows = root.querySelectorAll("[data-clist-row]");
+        rows.forEach((tr) => {
+            const nm = tr.getAttribute("data-clist-row");
+            tr.classList.toggle("is-selected", !!st.sel[nm]);
+            const ch = tr.querySelector("[data-clist-check]");
+            if (ch) ch.classList.toggle("is-checked", !!st.sel[nm]);
+        });
+    }
+
+    openRecord(doctype, name) {
+        if (!doctype || !name) return;
+        this.renderRecordView(doctype, name);
+    }
+
+    openNewRecord(conf) {
+        const doctype = conf && conf.doctype;
+        const fields = this.newFields(doctype);
+        if (!doctype || !fields || !fields.length) {
+            this.showToast(this.t("Native creation is not available for") + " " + (doctype || ""), "danger");
+            return;
+        }
+        const values = {};
+        values.date = new Date().toISOString().slice(0, 10);
+        values.currency = this.state.currency || "";
+        if (doctype === "Delivery Note") {
+            values.posting_date = values.date;
+            values.company = (this.state.companies && this.state.companies[0]) || "";
+        }
+        const body = `<div class="nx-form-grid nx-dialog-form">${fields.map((f) => this.settingsControl(f, values[f.fieldname])).join("")}</div>`;
+        this.showDialog({
+            title: this.t("New") + " " + doctype,
+            width: 580,
+            body,
+            actions: [
+                { label: this.t("Cancel"), variant: "secondary", click: (d) => d.close() },
+                { label: this.t("Create"), variant: "primary", click: (d) => {
+                    const vals = this.collectValues(d.el);
+                    d.close();
+                    this.showToast(this.t("Creating") + "…");
+                    window.NexoraDashboard.Services.insert(doctype, vals).then(() => {
+                        this.showToast(doctype + " " + this.t("created"), "success");
+                        if (this.state.list && this.state.list.conf) this.loadCenterList();
+                    }).catch(() => this.showToast(this.t("Could not create record"), "danger"));
+                } }
+            ]
+        });
+    }
+
+    // ---------------------------------------------------------------- native settings module
+    settingsSpec(key) {
+        const map = {
+            "nexora-settings": { kind: "single", doctype: "nexora Settings", icon: "file", color: "blue", title: "Nexora Settings", subtitle: "Workspace preferences" },
+            "barcode-settings": { kind: "single", doctype: "Barcode Settings", icon: "barcode", color: "purple", title: "Barcode Settings", subtitle: "Labels, printers & templates" },
+            "notif-settings": { kind: "single", doctype: "Notification Control", icon: "bell", color: "red", title: "Notification Settings", subtitle: "Email and notification rules" },
+            "print-settings": { kind: "single", doctype: "Print Settings", icon: "file", color: "indigo", title: "Print Settings", subtitle: "PDF, letterhead and pages" },
+            "stock-settings": { kind: "single", doctype: "Stock Settings", icon: "box", color: "gray", title: "Stock Settings", subtitle: "Inventory behaviour" },
+            "pricing-settings": { kind: "center", center: "pricing", icon: "tag", color: "green", title: "Item Pricing" },
+            "exchange-settings": { kind: "center", center: "exchange", icon: "globe", color: "teal", title: "Currency Exchange" },
+            "company-settings": {
+                kind: "list", doctype: "Company", icon: "building", color: "orange", title: "Companies", subtitle: "Companies and defaults",
+                columns: [
+                    { f: "name", label: "Company", type: "link" },
+                    { f: "default_currency", label: "Currency", type: "text" },
+                    { f: "country", label: "Country", type: "text" },
+                    { f: "domain", label: "Domain", type: "text" }
+                ]
+            }
+        };
+        return map[key] || null;
+    }
+
+    renderSettingsPage(key) {
+        this.state.settingsKey = key;
+        const spec = this.settingsSpec(key);
+        if (!spec) { this.renderSettings(); return; }
+        if (spec.kind === "center") { this.renderCenterList(spec.center); return; }
+        if (spec.kind === "list") {
+            const conf = {
+                key: "settings-" + key,
+                doctype: spec.doctype,
+                columns: spec.columns || [{ f: "name", label: "Name", type: "link" }],
+                icon: spec.icon, color: spec.color, title: spec.title, subtitle: spec.subtitle || ""
+            };
+            this.renderNativeList(conf);
+            return;
+        }
+        this.renderSingleSettingsForm(spec);
+    }
+
+    renderSingleSettingsForm(spec) {
+        const doctype = spec.doctype;
+        this.state.record = { doctype, name: doctype, doc: null, mode: "settings" };
+        let html = this.pageHeader({
+            icon: spec.icon || "settings", color: spec.color || "gray",
+            title: this.t(spec.title || doctype),
+            subtitle: this.t(spec.subtitle || "Settings"),
+            crumb: [this.t("Nexora"), this.t("Settings"), this.esc(spec.title || doctype)]
+        });
+        html += `<div class="nx-record" data-record>
+            <div class="nx-record-bar">
+                <button class="nx-btn nx-btn-secondary nx-btn-sm" data-record-back>${this.ic("chevron-left", 14)} ${this.t("Back")}</button>
+                <div class="nx-record-actions" data-record-actions></div>
+            </div>
+            <div class="nx-record-body" data-record-body><div class="nx-record-loading">${this.ic("refresh", 16)} ${this.t("Loading")}…</div></div>
+        </div>`;
+        this.main.innerHTML = `<div class="nx-view">${html}</div>`;
+        this.bindRecordView();
+        const S = window.NexoraDashboard.Services;
+        Promise.all([S.get(doctype, doctype), S.meta(doctype)]).then((res) => {
+            const doc = res[0];
+            const meta = res[1] || [];
+            if (!doc) { this.renderRecordError(); return; }
+            this.state.record.doc = doc;
+            const editable = meta.filter((f) => f && !f.read_only && !f.hidden && !["Table", "Code", "Button", "HTML", "Column Break", "Tab Break"].includes(f.fieldtype));
+            const body = this.main.querySelector("[data-record-body]");
+            if (body) body.innerHTML = `<div class="nx-form-card nx-card"><div class="nx-form-grid">${editable.map((f) => this.settingsControl(f, doc[f.fieldname])).join("")}</div></div>`;
+            const actions = this.main.querySelector("[data-record-actions]");
+            if (actions) actions.innerHTML = `<button class="nx-btn nx-btn-primary nx-btn-sm" data-record-save>${this.ic("save", 14)} ${this.t("Save")}</button>`;
+        }).catch(() => this.renderRecordError());
+    }
+
+    // ---------------------------------------------------------------- native record view
+    renderRecordView(doctype, name) {
+        this.state.record = { doctype, name, doc: null, mode: "view" };
+        let html = this.pageHeader({
+            icon: "file", color: "blue",
+            title: this.esc(name),
+            subtitle: this.esc(doctype),
+            crumb: [this.t("Nexora"), this.esc(doctype), this.esc(name)]
+        });
+        html += `<div class="nx-record" data-record>
+            <div class="nx-record-bar">
+                <button class="nx-btn nx-btn-secondary nx-btn-sm" data-record-back>${this.ic("chevron-left", 14)} ${this.t("Back")}</button>
+                <div class="nx-record-actions" data-record-actions></div>
+            </div>
+            <div class="nx-record-body" data-record-body><div class="nx-record-loading">${this.ic("refresh", 16)} ${this.t("Loading")}…</div></div>
+        </div>`;
+        this.main.innerHTML = `<div class="nx-view">${html}</div>`;
+        this.bindRecordView();
+        window.NexoraDashboard.Services.get(doctype, name).then((doc) => {
+            if (!doc) { this.renderRecordError(); return; }
+            this.state.record.doc = doc;
+            const conf = this.recordEditFields(doctype);
+            if (conf && conf.length) this.renderRecordEdit(conf);
+            else this.renderRecordReadonly(doc);
+        }).catch(() => this.renderRecordError());
+    }
+
+    renderRecordError() {
+        const body = this.main.querySelector("[data-record-body]");
+        const actions = this.main.querySelector("[data-record-actions]");
+        if (body) body.innerHTML = `<div class="nx-card nx-record-error"><div class="nx-empty-title">${this.esc(this.t("Could not load record"))}</div><div class="nx-empty-sub">${this.esc(this.t("Please try again"))}</div><button class="nx-btn nx-btn-secondary nx-btn-sm" data-record-back style="margin-top:12px">${this.t("Back")}</button></div>`;
+        if (actions) actions.innerHTML = "";
+    }
+
+    recordBack() {
+        const rb = this.state.list && this.state.list.conf;
+        this.state.record = null;
+        if (rb) { this.renderNativeList(rb); return; }
+        if (this.state.view === "settings") { this.renderSettings(); return; }
+        this.render(this.state.data);
+    }
+
+    bindRecordView() {
+        const self = this;
+        const root = this.main;
+        if (!root) return;
+        root.addEventListener("click", (e) => {
+            const back = e.target.closest("[data-record-back]");
+            if (back) { this.recordBack(); return; }
+            const save = e.target.closest("[data-record-save]");
+            if (save) { this.saveRecordForm(); return; }
+            const submit = e.target.closest("[data-record-submit]");
+            if (submit) { this.submitRecord(); return; }
+            const cancel = e.target.closest("[data-record-cancel]");
+            if (cancel) { this.cancelRecord(); return; }
+            const del = e.target.closest("[data-record-delete]");
+            if (del) { this.deleteRecord(); }
+        });
+    }
+
+    saveRecordForm() {
+        const rec = this.state.record;
+        if (!rec || !rec.doc) return;
+        const vals = this.collectValues(this.main.querySelector("[data-record-body]"));
+        this.showToast(this.t("Saving") + "…");
+        window.NexoraDashboard.Services.setValue(rec.doctype, rec.name, vals).then(() => {
+            this.showToast(this.t("Saved"), "success");
+            if (rec.mode === "settings") this.renderSettingsPage(this.state.settingsKey);
+            else this.renderRecordView(rec.doctype, rec.name);
+        }).catch(() => this.showToast(this.t("Could not save"), "danger"));
+    }
+
+    submitRecord() {
+        const rec = this.state.record;
+        if (!rec || !rec.doc) return;
+        this.showDialog({
+            title: this.t("Submit") + " " + rec.name + "?",
+            body: `<div class="nx-dialog-note">${this.esc(rec.doctype)}</div>`,
+            actions: [
+                { label: this.t("Cancel"), variant: "secondary", click: (d) => d.close() },
+                { label: this.t("Submit"), variant: "primary", click: (d) => {
+                    d.close();
+                    this.showToast(this.t("Submitting") + "…");
+                    window.NexoraDashboard.Services.submit(rec.doc).then(() => {
+                        this.showToast(this.t("Submitted"), "success");
+                        this.renderRecordView(rec.doctype, rec.name);
+                    }).catch(() => this.showToast(this.t("Could not submit"), "danger"));
+                } }
+            ]
+        });
+    }
+
+    cancelRecord() {
+        const rec = this.state.record;
+        if (!rec || !rec.doc) return;
+        this.showDialog({
+            title: this.t("Cancel") + " " + rec.name + "?",
+            body: `<div class="nx-dialog-note">${this.esc(rec.doctype)}</div>`,
+            actions: [
+                { label: this.t("Keep"), variant: "secondary", click: (d) => d.close() },
+                { label: this.t("Cancel Document"), variant: "danger", click: (d) => {
+                    d.close();
+                    this.showToast(this.t("Cancelling") + "…");
+                    window.NexoraDashboard.Services.cancel(rec.doc).then(() => {
+                        this.showToast(this.t("Cancelled"), "success");
+                        this.renderRecordView(rec.doctype, rec.name);
+                    }).catch(() => this.showToast(this.t("Could not cancel"), "danger"));
+                } }
+            ]
+        });
+    }
+
+    deleteRecord() {
+        const rec = this.state.record;
+        if (!rec || !rec.doc) return;
+        this.showDialog({
+            title: this.t("Delete") + " " + rec.name + "?",
+            body: `<div class="nx-dialog-note">${this.esc(this.t("This cannot be undone"))}</div>`,
+            actions: [
+                { label: this.t("Keep"), variant: "secondary", click: (d) => d.close() },
+                { label: this.t("Delete"), variant: "danger", click: (d) => {
+                    d.close();
+                    this.showToast(this.t("Deleting") + "…");
+                    window.NexoraDashboard.Services.delete(rec.doctype, rec.name).then(() => {
+                        this.showToast(this.t("Deleted"), "success");
+                        this.recordBack();
+                    }).catch(() => this.showToast(this.t("Could not delete"), "danger"));
+                } }
+            ]
+        });
+    }
+
+    docStatus(doc) {
+        if (doc.docstatus === 2) return "Cancelled";
+        if (doc.docstatus === 1) return doc.status || "Submitted";
+        return doc.status || "Draft";
+    }
+
+    renderRecordReadonly(doc) {
+        const rec = this.state.record;
+        const body = this.main.querySelector("[data-record-body]");
+        const actions = this.main.querySelector("[data-record-actions]");
+        let rows = [
+            ["Name", doc.name],
+            ["Status", `<span class="nx-pill nx-pill-${(this.statusPillTone(this.docStatus(doc)))}">${this.esc(this.docStatus(doc))}</span>`],
+            ["Created", this.esc(doc.creation || "")],
+            ["Modified", this.esc(doc.modified || "")]
+        ];
+        (this.readOnlyFields(rec.doctype) || []).forEach((f) => {
+            const v = doc[f.fieldname];
+            if (v !== undefined && v !== null && v !== "") rows.push([f.label, this.esc(String(v))]);
+        });
+        let html = `<div class="nx-form-card nx-card"><div class="nx-form-grid">`;
+        html += rows.map((r) => `<div class="nx-ro-cell"><span class="nx-ro-label">${this.esc(r[0])}</span><span class="nx-ro-value">${r[1]}</span></div>`).join("");
+        html += `</div></div>`;
+        if (doc.items && doc.items.length) {
+            html += `<div class="nx-card nx-record-items"><div class="nx-card-head"><span class="nx-card-ic nx-ic-orange">${this.ic("file-text", 14)}</span><span class="nx-card-title">${this.t("Items")}</span><span class="nx-card-count">${doc.items.length}</span></div>
+                <div class="nx-table-wrap"><table class="nx-table nx-clist-table"><thead><tr><th>${this.t("Item")}</th><th>${this.t("Qty")}</th><th>${this.t("Rate")}</th><th>${this.t("Amount")}</th></tr></thead><tbody>` +
+                doc.items.map((it) => `<tr><td class="nx-td-link">${this.esc(it.item_code || it.item_name || "")}</td><td>${this.esc(String(it.qty || 0))}</td><td>${this.esc(String(it.rate || 0))}</td><td>${this.esc(String(it.amount || 0))}</td></tr>`).join("") +
+                `</tbody></table></div></div>`;
+        }
+        if (body) body.innerHTML = html;
+        if (actions) {
+            let a = "";
+            if (doc.docstatus === 0) a += `<button class="nx-btn nx-btn-primary nx-btn-sm" data-record-submit>${this.ic("check", 14)} ${this.t("Submit")}</button><button class="nx-btn nx-btn-danger nx-btn-sm" data-record-delete>${this.ic("trash", 14)} ${this.t("Delete")}</button>`;
+            else if (doc.docstatus === 1) a += `<button class="nx-btn nx-btn-secondary nx-btn-sm" data-record-cancel>${this.ic("x", 14)} ${this.t("Cancel Document")}</button>`;
+            actions.innerHTML = a;
+        }
+    }
+
+    statusPillTone(s) {
+        const map = { Draft: "gray", Submitted: "blue", Completed: "green", Cancelled: "red", Return: "orange", Closed: "teal", Open: "blue", "On Hold": "orange" };
+        return map[s] || "gray";
+    }
+
+    readOnlyFields(doctype) {
+        const defs = {
+            "Delivery Note": [
+                { fieldname: "customer", label: "Customer" },
+                { fieldname: "posting_date", label: "Posting Date" },
+                { fieldname: "due_date", label: "Due Date" },
+                { fieldname: "currency", label: "Currency" },
+                { fieldname: "total_qty", label: "Total Qty" },
+                { fieldname: "total_net_weight", label: "Net Weight" },
+                { fieldname: "grand_total", label: "Grand Total" },
+                { fieldname: "remarks", label: "Remarks" }
+            ],
+            "Company": [
+                { fieldname: "company_name", label: "Company Name" },
+                { fieldname: "abbreviation", label: "Abbreviation" },
+                { fieldname: "default_currency", label: "Currency" },
+                { fieldname: "country", label: "Country" },
+                { fieldname: "domain", label: "Domain" }
+            ]
+        };
+        return defs[doctype] || [{ fieldname: "name", label: "Name" }];
+    }
+
+    recordEditFields(doctype) {
+        const defs = {
+            "Item Price": [
+                { fieldname: "item_code", label: "Item Code", fieldtype: "Data", reqd: 1 },
+                { fieldname: "price_list", label: "Price List", fieldtype: "Data", reqd: 1 },
+                { fieldname: "price_list_rate", label: "Rate", fieldtype: "Currency" },
+                { fieldname: "currency", label: "Currency", fieldtype: "Data" },
+                { fieldname: "valid_from", label: "Valid From", fieldtype: "Date" },
+                { fieldname: "valid_upto", label: "Valid Upto", fieldtype: "Date" },
+                { fieldname: "note", label: "Note", fieldtype: "Small Text" }
+            ],
+            "Currency Exchange": [
+                { fieldname: "date", label: "Date", fieldtype: "Date", reqd: 1 },
+                { fieldname: "from_currency", label: "From Currency", fieldtype: "Data", reqd: 1 },
+                { fieldname: "to_currency", label: "To Currency", fieldtype: "Data", reqd: 1 },
+                { fieldname: "exchange_rate", label: "Exchange Rate", fieldtype: "Float" },
+                { fieldname: "for_booking", label: "For Booking", fieldtype: "Check" },
+                { fieldname: "for_selling", label: "For Selling", fieldtype: "Check" }
+            ]
+        };
+        return defs[doctype] || null;
+    }
+
+    newFields(doctype) {
+        const defs = {
+            "Item Price": [
+                { fieldname: "item_code", label: "Item Code", fieldtype: "Data", reqd: 1 },
+                { fieldname: "price_list", label: "Price List", fieldtype: "Data", reqd: 1 },
+                { fieldname: "price_list_rate", label: "Rate", fieldtype: "Currency" },
+                { fieldname: "currency", label: "Currency", fieldtype: "Data" },
+                { fieldname: "valid_from", label: "Valid From", fieldtype: "Date" },
+                { fieldname: "valid_upto", label: "Valid Upto", fieldtype: "Date" }
+            ],
+            "Currency Exchange": [
+                { fieldname: "date", label: "Date", fieldtype: "Date", reqd: 1 },
+                { fieldname: "from_currency", label: "From Currency", fieldtype: "Data", reqd: 1 },
+                { fieldname: "to_currency", label: "To Currency", fieldtype: "Data", reqd: 1 },
+                { fieldname: "exchange_rate", label: "Exchange Rate", fieldtype: "Float" }
+            ],
+            "Delivery Note": [
+                { fieldname: "customer", label: "Customer", fieldtype: "Data", reqd: 1 },
+                { fieldname: "posting_date", label: "Posting Date", fieldtype: "Date", reqd: 1 },
+                { fieldname: "delivery_date", label: "Delivery Date", fieldtype: "Date" },
+                { fieldname: "company", label: "Company", fieldtype: "Data" }
+            ]
+        };
+        return defs[doctype] || null;
+    }
+
+    renderRecordEdit(conf) {
+        const rec = this.state.record;
+        const body = this.main.querySelector("[data-record-body]");
+        const actions = this.main.querySelector("[data-record-actions]");
+        if (body) body.innerHTML = `<div class="nx-form-card nx-card"><div class="nx-form-grid">${conf.map((f) => this.settingsControl(f, rec.doc[f.fieldname])).join("")}</div></div>`;
+        if (actions) actions.innerHTML = `<button class="nx-btn nx-btn-primary nx-btn-sm" data-record-save>${this.ic("save", 14)} ${this.t("Save")}</button>`;
+    }
+
+    // ---------------------------------------------------------------- reusable form controls
+    settingsControl(f, value) {
+        const v = value === null || value === undefined ? "" : value;
+        const label = f.label || f.fieldname || "";
+        const ft = f.fieldtype || "Data";
+        const reqd = f.reqd ? ` <i class="nx-reqd">*</i>` : "";
+        const desc = f.description ? `<span class="nx-fdesc">${this.esc(f.description)}</span>` : "";
+        if (ft === "Section Break") return `<div class="nx-form-section"><h4 class="nx-form-section-title">${this.esc(label)}</h4></div>`;
+        if (ft === "Column Break") return "";
+        if (ft === "Check") {
+            return `<label class="nx-fcheck"><input type="checkbox" data-f="${this.esc(f.fieldname)}" ${v ? "checked" : ""} /><span class="nx-fcheck-box"></span><span class="nx-fcheck-label">${this.esc(label)}${reqd}</span>${desc}</label>`;
+        }
+        if (ft === "Select") {
+            const opts = String(f.options || "").split("\n").filter((o) => o.trim());
+            return `<label class="nx-flabel"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+                <select class="nx-select" data-f="${this.esc(f.fieldname)}">${opts.map((o) => `<option value="${this.esc(o)}" ${String(v) === o ? "selected" : ""}>${this.esc(o)}</option>`).join("")}</select>${desc}</label>`;
+        }
+        if (ft === "Text" || ft === "Small Text" || ft === "Long Text") {
+            return `<label class="nx-flabel nx-flabel-wide"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+                <textarea class="nx-input" data-f="${this.esc(f.fieldname)}" rows="${ft === "Small Text" ? 2 : 4}">${this.esc(v)}</textarea>${desc}</label>`;
+        }
+        if (ft === "Date") {
+            return `<label class="nx-flabel"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+                <input class="nx-input" type="date" data-f="${this.esc(f.fieldname)}" value="${this.esc(v)}" />${desc}</label>`;
+        }
+        if (ft === "Time") {
+            return `<label class="nx-flabel"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+                <input class="nx-input" type="time" data-f="${this.esc(f.fieldname)}" value="${this.esc(v)}" />${desc}</label>`;
+        }
+        if (ft === "Int" || ft === "Float" || ft === "Currency" || ft === "Percent") {
+            const step = (ft === "Int" || ft === "Percent") ? "1" : "any";
+            return `<label class="nx-flabel"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+                <input class="nx-input" type="number" step="${step}" data-f="${this.esc(f.fieldname)}" value="${this.esc(v)}" />${desc}</label>`;
+        }
+        return `<label class="nx-flabel"><span class="nx-flabel-title">${this.esc(label)}${reqd}</span>
+            <input class="nx-input" type="text" autocomplete="off" spellcheck="false" data-f="${this.esc(f.fieldname)}" value="${this.esc(v)}" />${desc}</label>`;
+    }
+
+    collectValues(scopeEl) {
+        const out = {};
+        (scopeEl || this.main).querySelectorAll("[data-f]").forEach((el) => {
+            const f = el.getAttribute("data-f");
+            if (!f) return;
+            if (el.type === "checkbox") out[f] = el.checked ? 1 : 0;
+            else if (el.type === "number") out[f] = el.value === "" ? null : Number(el.value);
+            else if (el.tagName === "SELECT") out[f] = el.value;
+            else out[f] = el.value;
+        });
+        return out;
+    }
+
+    // ---------------------------------------------------------------- notifications
+    showToast(msg, type) {
+        type = type || "success";
+        const stack = (this.root && this.root.querySelector(".nx-toast-stack")) || (this.root ? (() => {
+            const s = document.createElement("div");
+            s.className = "nx-toast-stack";
+            this.root.appendChild(s);
+            return s;
+        })() : document.body);
+        const t = document.createElement("div");
+        t.className = "nx-toast nx-toast-" + type;
+        const icn = type === "success" ? "check" : (type === "danger" ? "alert" : "refresh");
+        t.innerHTML = `<span class="nx-toast-ic">${this.ic(icn, 14)}</span><span class="nx-toast-msg">${this.esc(msg)}</span>`;
+        stack.appendChild(t);
+        setTimeout(() => {
+            t.classList.add("is-out");
+            setTimeout(() => t.remove(), 220);
+        }, 2800);
     }
 
     // ---------------------------------------------------------------- barcode studio
@@ -2293,7 +3370,7 @@ window.NexoraDashboard.App = class {
         let html = this.pageHeader({
             icon: "settings", color: "gray",
             title: this.t("Settings"),
-            subtitle: this.t("Nexora & ERPNext preferences"),
+            subtitle: this.t("Nexora preferences"),
             crumb: [this.t("Nexora"), this.t("Settings")]
         });
         html += `<div class="nx-settings-grid">`;
@@ -2337,8 +3414,8 @@ window.NexoraDashboard.App = class {
             "top-customers": () => report("Customer Ledger Summary", this.t("Customer Ledger Summary"), "users", "orange"),
             "top-suppliers": () => report("Supplier Ledger Summary", this.t("Supplier Ledger Summary"), "truck", "blue"),
             "warehouse": () => report("Warehouse Wise Stock Balance", this.t("Warehouse Wise Stock Balance"), "grid", "blue"),
-            "exchange": () => embed("/app/currency-exchange", this.t("Exchange Center"), "globe", "teal"),
-            "pricing": () => embed("/app/item-price", this.t("Pricing Center"), "tag", "green"),
+            "exchange": () => this.renderCenterList("exchange"),
+            "pricing": () => this.renderCenterList("pricing"),
             "notifications": () => report("Notification Log", this.t("Notification Log"), "bell", "orange")
         };
         const item = map[key];
@@ -2749,6 +3826,7 @@ window.NexoraDashboard.App = class {
             "pie-chart": '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
             "alert-triangle": '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
             "file-text": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+            "file-spreadsheet": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="21" x2="16" y2="21"/>',
             "percent": '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
             "users": '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
             "truck": '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',

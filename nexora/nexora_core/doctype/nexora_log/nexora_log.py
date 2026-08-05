@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 import frappe
+from frappe.model.document import Document
+
+
+class nexoraLog(Document):
+    pass
+
 
 def log_event(subject, message, log_type='Info', module='nexora Core'):
     frappe.get_doc({

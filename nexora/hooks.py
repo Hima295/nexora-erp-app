@@ -9,14 +9,14 @@ app_email = "dev@nexora.internal"
 app_license = "MIT"
 
 # ERPNext Dependency Declaration
-# Ensures nexora is installed alongside ERPNext v15+
 required_apps = ["frappe", "erpnext"]
 
 # App Include CSS & JS Assets in Frappe Desk
 # Injected non-invasively for both LTR (English) and RTL (Arabic) layouts
 app_include_js = [
     "/assets/nexora/js/nexora.bundle.js",
-    "/assets/nexora/js/nexora_rtl.js"
+    "/assets/nexora/js/nexora_rtl.js",
+    "/assets/nexora/js/nexora_workspace_mount.js"
 ]
 
 app_include_css = [
@@ -24,11 +24,30 @@ app_include_css = [
     "/assets/nexora/css/nexora_rtl.css"
 ]
 
+# Nexora is now rendered inside the ERPNext Desk as a regular Workspace
+# (the SPA is mounted by public/js/nexora_workspace_mount.js when the "Nexora"
+# workspace is shown). No website route rule is registered for /app/nexora so
+# the URL resolves to the Desk workspace and keeps the Desk sidebar visible.
+
+# Show Nexora as the default app on the apps screen
+add_to_apps_screen = [
+    {
+        "name": "nexora",
+        "logo": "/assets/nexora/icons/nexora_logo.svg",
+        "title": "Nexora",
+        "route": "/app/nexora",
+    }
+]
+
+# Barcode Studio page assets are loaded from page/barcode_studio/barcode_studio.js
+# via frappe.require() using /assets/nexora/... URLs. The page_js hook cannot
+# reference public files (it resolves relative to the app's Python module path),
+# so no page_js entries are defined here.
+
 # Desk Notifications & Logo
 app_logo_url = "/assets/nexora/icons/nexora_logo.svg"
 
-# Document Events Hooks (Non-invasive ERPNext standard observers)
-# Listens to ERPNext lifecycle events without editing ERPNext core files
+# Document Events Hooks
 doc_events = {
     "Sales Order": {
         "on_submit": "nexora.overrides.doc_events.on_sales_order_submit",
@@ -46,7 +65,6 @@ doc_events = {
 }
 
 # Scheduled Background Tasks
-# Automated background processing using Frappe Scheduler
 scheduler_events = {
     "hourly": [
         "nexora.tasks.cron.hourly_analytics_sync"
@@ -60,7 +78,6 @@ scheduler_events = {
 }
 
 # Non-invasive Custom Field & Property Setter Fixtures
-# Automatically exports and installs custom fields on standard ERPNext DocTypes
 fixtures = [
     {
         "dt": "Custom Field",
@@ -73,7 +90,6 @@ fixtures = [
 ]
 
 # Custom Whitelisted API Boot Info
-# Invoked during Frappe desk initialization
 boot_session = "nexora.api.v1.boot_session"
 
 # Jinja Template Extensions

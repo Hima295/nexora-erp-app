@@ -1,0 +1,81 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 14:50:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_item_info",
+    "item_code",
+    "barcode",
+    "column_break_1",
+    "barcode_type",
+    "generated_date",
+    "company"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_item_info",
+      "fieldtype": "Section Break",
+      "label": "Item Information"
+    },
+    {
+      "fieldname": "item_code",
+      "fieldtype": "Link",
+      "label": "Item Code",
+      "options": "Item",
+      "reqd": 1
+    },
+    {
+      "fieldname": "barcode",
+      "fieldtype": "Data",
+      "label": "Barcode",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "barcode_type",
+      "fieldtype": "Select",
+      "label": "Barcode Type",
+      "options": "Code128\nCode39\nEAN13\nEAN8\nUPC\nQR Code\nPDF417\nData Matrix",
+      "default": "Code128"
+    },
+    {
+      "fieldname": "generated_date",
+      "fieldtype": "Datetime",
+      "label": "Generated Date"
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 14:50:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Barcode Item",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

@@ -1,0 +1,97 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 11:27:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_backup_info",
+    "backup_name",
+    "backup_file_path",
+    "column_break_1",
+    "backup_size",
+    "creation_date",
+    "section_details",
+    "created_by",
+    "status",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_backup_info",
+      "fieldtype": "Section Break",
+      "label": "Backup Information"
+    },
+    {
+      "fieldname": "backup_name",
+      "fieldtype": "Data",
+      "label": "Backup Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "backup_file_path",
+      "fieldtype": "Data",
+      "label": "Backup File Path",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "backup_size",
+      "fieldtype": "Data",
+      "label": "Backup Size"
+    },
+    {
+      "fieldname": "creation_date",
+      "fieldtype": "Datetime",
+      "label": "Creation Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_details",
+      "fieldtype": "Section Break",
+      "label": "Details"
+    },
+    {
+      "fieldname": "created_by",
+      "fieldtype": "Data",
+      "label": "Created By"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Available\nRestored\nDeleted\nCorrupted",
+      "default": "Available"
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Text",
+      "label": "Notes"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 11:27:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Backup",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

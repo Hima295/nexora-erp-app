@@ -1,0 +1,149 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 11:27:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_update_info",
+    "date",
+    "time",
+    "column_break_1",
+    "commit_hash",
+    "branch",
+    "section_meta",
+    "commit_message",
+    "tag",
+    "column_break_2",
+    "author",
+    "duration",
+    "section_files",
+    "changed_files",
+    "column_break_3",
+    "backup_file",
+    "push_result",
+    "section_status",
+    "status"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_update_info",
+      "fieldtype": "Section Break",
+      "label": "Update Information"
+    },
+    {
+      "fieldname": "date",
+      "fieldtype": "Date",
+      "label": "Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "time",
+      "fieldtype": "Time",
+      "label": "Time"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "commit_hash",
+      "fieldtype": "Data",
+      "label": "Commit Hash",
+      "length": 40
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Data",
+      "label": "Branch",
+      "default": "main"
+    },
+    {
+      "fieldname": "section_meta",
+      "fieldtype": "Section Break",
+      "label": "Details"
+    },
+    {
+      "fieldname": "commit_message",
+      "fieldtype": "Text",
+      "label": "Commit Message"
+    },
+    {
+      "fieldname": "tag",
+      "fieldtype": "Data",
+      "label": "Tag"
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "author",
+      "fieldtype": "Data",
+      "label": "Author"
+    },
+    {
+      "fieldname": "duration",
+      "fieldtype": "Duration",
+      "label": "Duration"
+    },
+    {
+      "fieldname": "section_files",
+      "fieldtype": "Section Break",
+      "label": "Files"
+    },
+    {
+      "fieldname": "changed_files",
+      "fieldtype": "Text",
+      "label": "Changed Files"
+    },
+    {
+      "fieldname": "column_break_3",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "backup_file",
+      "fieldtype": "Data",
+      "label": "Backup File"
+    },
+    {
+      "fieldname": "push_result",
+      "fieldtype": "Text",
+      "label": "Push Result"
+    },
+    {
+      "fieldname": "section_status",
+      "fieldtype": "Section Break",
+      "label": "Status"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Pending\nSuccess\nFailed\nPartial",
+      "default": "Pending"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 11:27:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Update History",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

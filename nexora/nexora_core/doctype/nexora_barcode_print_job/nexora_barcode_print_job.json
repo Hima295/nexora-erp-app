@@ -1,0 +1,126 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 14:50:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_job_info",
+    "job_name",
+    "template",
+    "column_break_1",
+    "print_type",
+    "total_labels",
+    "status",
+    "section_details",
+    "item_code",
+    "item_name",
+    "barcode",
+    "column_break_2",
+    "printed_by",
+    "print_date",
+    "printer_name"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_job_info",
+      "fieldtype": "Section Break",
+      "label": "Print Job Information"
+    },
+    {
+      "fieldname": "job_name",
+      "fieldtype": "Data",
+      "label": "Job Name"
+    },
+    {
+      "fieldname": "template",
+      "fieldtype": "Link",
+      "label": "Template",
+      "options": "Nexora Barcode Template"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "print_type",
+      "fieldtype": "Select",
+      "label": "Print Type",
+      "options": "Current Item\nSelected Items\nAll Items\nCategory\nBrand\nSupplier\nWarehouse\nPurchase Receipt\nDelivery Note\nSales Invoice\nStock Entry"
+    },
+    {
+      "fieldname": "total_labels",
+      "fieldtype": "Int",
+      "label": "Total Labels"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Pending\nPrinting\nCompleted\nFailed",
+      "default": "Pending"
+    },
+    {
+      "fieldname": "section_details",
+      "fieldtype": "Section Break",
+      "label": "Details"
+    },
+    {
+      "fieldname": "item_code",
+      "fieldtype": "Data",
+      "label": "Item Code"
+    },
+    {
+      "fieldname": "item_name",
+      "fieldtype": "Data",
+      "label": "Item Name"
+    },
+    {
+      "fieldname": "barcode",
+      "fieldtype": "Data",
+      "label": "Barcode"
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "printed_by",
+      "fieldtype": "Link",
+      "label": "Printed By",
+      "options": "User"
+    },
+    {
+      "fieldname": "print_date",
+      "fieldtype": "Datetime",
+      "label": "Print Date"
+    },
+    {
+      "fieldname": "printer_name",
+      "fieldtype": "Data",
+      "label": "Printer Name"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 14:50:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Barcode Print Job",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

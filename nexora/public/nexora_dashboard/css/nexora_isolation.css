@@ -1,0 +1,1602 @@
+/* ==========================================================================
+   Nexora Isolation — ERPNext → Nexora visual takeover
+   --------------------------------------------------------------------------
+   Injected into every ERPNext screen embedded inside the Nexora UI
+   (Pricing / Shipment / Exchange / Settings / Sales / Purchasing / Inventory
+   / Finance / Accounting / CRM and any future module).
+
+   UI ONLY. No logic, no ERPNext patches. Every rule lives in Nexora source.
+   It remaps ERPNext's CSS variables to the Nexora design tokens and re-skins
+   ERPNext components (headers, lists, forms, tables, modals, pagination,
+   empty + loading states) so nothing outside the Nexora Dashboard shows
+   ERPNext visual identity.
+
+   Light theme only: embedded ERPNext pages stay light to match the Nexora
+   shell's default workspace theme.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Nexora tokens + ERPNext variable remap
+   -------------------------------------------------------------------------- */
+:root,
+[data-theme="light"] {
+    /* Nexora tokens (mirror nexora_dashboard.css) */
+    --nx-bg: #f6f7fb;
+    --nx-surface: #ffffff;
+    --nx-surface-2: #eef0f6;
+    --nx-border: #e6e8f0;
+    --nx-text: #141a2e;
+    --nx-text-2: #465066;
+    --nx-text-3: #8b93a7;
+    --nx-accent: #5e6ad2;
+    --nx-accent-strong: #4a56c0;
+    --nx-accent-soft: rgba(94, 106, 210, 0.1);
+    --nx-accent-ring: 0 0 0 3px rgba(94, 106, 210, 0.2);
+    --nx-green: #15803d;
+    --nx-green-bg: #dcfce7;
+    --nx-blue: #1d4ed8;
+    --nx-blue-bg: #dbeafe;
+    --nx-purple: #6d28d9;
+    --nx-purple-bg: #ede9fe;
+    --nx-orange: #c2410c;
+    --nx-orange-bg: #ffedd5;
+    --nx-yellow: #b45309;
+    --nx-yellow-bg: #fef3c7;
+    --nx-red: #b91c1c;
+    --nx-red-bg: #fee2e2;
+    --nx-teal: #0f766e;
+    --nx-teal-bg: #ccfbf1;
+    --nx-indigo: #4338ca;
+    --nx-indigo-bg: #e0e7ff;
+    --nx-gray: #4b5563;
+    --nx-gray-bg: #f3f4f6;
+    --nx-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.05), 0 4px 14px rgba(17, 24, 39, 0.04);
+    --nx-shadow-hover: 0 2px 4px rgba(17, 24, 39, 0.05), 0 10px 28px rgba(17, 24, 39, 0.1);
+    --nx-radius: 12px;
+    --nx-radius-sm: 9px;
+    --nx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    /* Remap ERPNext semantic tokens onto the Nexora system so every
+       component (themed or unthemed) inherits the Nexora look. */
+    --text-color: var(--nx-text);
+    --text-muted: var(--nx-text-2);
+    --text-light: var(--nx-text-3);
+    --text-dark: var(--nx-text);
+    --heading-color: var(--nx-text);
+    --headings-color: var(--nx-text);
+    --fg-color: var(--nx-bg);
+    --subtle-fg: var(--nx-bg);
+    --subtle-accent: var(--nx-surface-2);
+    --card-bg: var(--nx-surface);
+    --bg: var(--nx-bg);
+    --bg-color: var(--nx-bg);
+    --navbar-bg: var(--nx-surface);
+    --control-bg: var(--nx-surface);
+    --control-bg-on-gray: var(--nx-surface-2);
+    --disabled-control-bg: var(--nx-surface-2);
+    --border-color: var(--nx-border);
+    --dark-border-color: var(--nx-border);
+    --table-border-color: var(--nx-border);
+    --page-head-bg: var(--nx-surface);
+    --primary: var(--nx-accent);
+    --primary-color: var(--nx-accent);
+    --primary-color-light: var(--nx-accent-soft);
+    --btn-primary-color: #ffffff;
+    --btn-primary-bg: var(--nx-accent);
+    --btn-default-bg: var(--nx-surface);
+    --btn-default-bg-hover: var(--nx-surface-2);
+    --btn-default-border: var(--nx-border);
+    --error-bg: var(--nx-red-bg);
+    --error-border: #fecaca;
+    --error-color: var(--nx-red);
+    --control-radius: var(--nx-radius-sm);
+    --border-radius-sm: var(--nx-radius-sm);
+    --border-radius: var(--nx-radius-sm);
+    --border-radius-md: var(--nx-radius);
+    --border-radius-lg: var(--nx-radius);
+    --border-radius-xl: 16px;
+    --card-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.05), 0 4px 14px rgba(17, 24, 39, 0.04);
+    --modal-shadow: 0 20px 50px rgba(17, 24, 39, 0.22);
+    --shadow-xs: 0 1px 2px rgba(17, 24, 39, 0.04);
+    --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.05);
+    --shadow-base: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.05), 0 4px 14px rgba(17, 24, 39, 0.04);
+    --shadow-md: 0 4px 6px rgba(17, 24, 39, 0.05), 0 8px 24px rgba(17, 24, 39, 0.09);
+    --shadow-lg: 0 8px 16px rgba(17, 24, 39, 0.08), 0 20px 50px rgba(17, 24, 39, 0.18);
+    --shadow-xl: 0 20px 50px rgba(17, 24, 39, 0.22);
+    --focus-default: 0 0 0 3px rgba(94, 106, 210, 0.2);
+    --focus-blue: 0 0 0 3px rgba(94, 106, 210, 0.25);
+    --scrollbar-thumb-color: #c5cbdb;
+    --scrollbar-track-color: transparent;
+    --font-stack: var(--nx-font);
+    --font-sans: var(--nx-font);
+}
+
+/* --------------------------------------------------------------------------
+   2. Base
+   -------------------------------------------------------------------------- */
+html,
+body {
+    background: var(--nx-bg) !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+html {
+    overflow: hidden !important;
+}
+body {
+    overflow: auto !important;
+    overscroll-behavior: contain !important;
+    font-family: var(--nx-font) !important;
+    color: var(--nx-text) !important;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+a {
+    color: var(--nx-accent);
+}
+a:hover {
+    color: var(--nx-accent-strong);
+}
+::selection {
+    background: rgba(94, 106, 210, 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   3. Remove ERPNext visual identity (global chrome + workspaces)
+   -------------------------------------------------------------------------- */
+.navbar,
+.navbar-fixed,
+.navbar-collapse,
+.desk-sidebar,
+.desktop-sidebar,
+.layout-side-section,
+.standard-sidebar,
+.desk-navbar,
+.desk-toolbar,
+.search-modal,
+.search-dialog,
+.window-actions,
+.navbar-header,
+.navbar-right,
+.main-menu,
+.page-head .sidebar-toggle-btn,
+.page-head .more-button,
+.workspace-sidebar,
+.workspace-footer,
+.workspace-header,
+.workspace-section-header,
+.control-panel,
+#page-Workspaces .page-head,
+#page-Workspaces .workspace-body,
+.desktop-layout,
+.frappe-control[data-fieldtype="Table"] .form-grid .grid-heading-row,
+.widget-container .page-head,
+.module-sidebar-nav,
+.module-links,
+.sidebar-menu {
+    display: none !important;
+}
+.form-sidebar,
+.form-sidebar-sticky {
+    display: none !important;
+}
+.layout-main-section-wrapper,
+.layout-main-section,
+.main-section,
+.page-content,
+.page-wrapper,
+.page-container,
+#page-container {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+/* ERPNext page header becomes the Nexora Configuration toolbar:
+   title + subtitle on the left, Nexora actions on the right.
+   Breadcrumbs and workspace toggles stay hidden. */
+.page-head {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 62px;
+    padding: 12px 22px !important;
+    margin: 0 !important;
+    background: color-mix(in srgb, var(--nx-surface) 86%, transparent) !important;
+    backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid var(--nx-border) !important;
+    box-shadow: 0 1px 0 rgba(17, 24, 39, 0.03);
+}
+.page-head .container {
+    width: 100%;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+.page-head .title-area {
+    min-width: 0;
+    flex: 1;
+    min-height: auto !important;
+}
+.page-head .title-text {
+    font-size: 17px !important;
+    font-weight: 750 !important;
+    color: var(--nx-text) !important;
+    letter-spacing: -0.25px;
+    line-height: 1.25;
+    margin: 0;
+}
+.page-head .title-text .indicator {
+    font-size: 13px;
+}
+.page-head .sub-heading {
+    font-size: 12px !important;
+    font-weight: 400;
+    color: var(--nx-text-2) !important;
+    margin-top: 2px;
+}
+.page-head .page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.page-head .page-actions .btn,
+.page-head .page-actions .btn-secondary,
+.page-head .page-actions .btn-default {
+    height: 34px;
+    padding: 0 14px !important;
+    font-size: 12.5px !important;
+    font-weight: 650 !important;
+    border-radius: var(--nx-radius-sm) !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: none !important;
+}
+.page-head .page-actions .btn-primary {
+    box-shadow: var(--nx-shadow) !important;
+}
+.page-head .sidebar-toggle-btn,
+.page-head .more-button {
+    display: none !important;
+}
+.page-head .indicator-pill,
+.page-head .indicator-pill-round {
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    padding: 4px 10px !important;
+    border: 0 !important;
+}
+.breadcrumb,
+.breadcrumb-wrapper,
+.breadcrumb a,
+.breadcrumb .divider {
+    display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. Buttons
+   -------------------------------------------------------------------------- */
+.btn {
+    border-radius: var(--nx-radius-sm) !important;
+    font-size: 12.5px !important;
+    font-weight: 650 !important;
+    padding: 6px 14px !important;
+    height: 32px;
+    line-height: 18px;
+    letter-spacing: -0.1px;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+.btn-xs {
+    height: 24px;
+    padding: 3px 9px !important;
+    font-size: 11.5px !important;
+}
+.btn-sm {
+    height: 28px;
+    padding: 4px 11px !important;
+    font-size: 12px !important;
+}
+.btn-lg {
+    height: 38px;
+    padding: 8px 18px !important;
+    font-size: 13.5px !important;
+}
+.btn:focus,
+.btn:active {
+    box-shadow: var(--nx-accent-ring) !important;
+}
+.btn-primary {
+    background: var(--nx-accent) !important;
+    border-color: var(--nx-accent) !important;
+    color: #fff !important;
+    box-shadow: 0 1px 2px rgba(94, 106, 210, 0.3) !important;
+}
+.btn-primary:hover,
+.btn-primary:focus {
+    background: var(--nx-accent-strong) !important;
+    border-color: var(--nx-accent-strong) !important;
+    color: #fff !important;
+}
+.btn-secondary,
+.btn-default,
+.btn-light {
+    background: var(--nx-surface) !important;
+    border-color: var(--nx-border) !important;
+    color: var(--nx-text) !important;
+}
+.btn-secondary:hover,
+.btn-default:hover,
+.btn-light:hover {
+    background: var(--nx-surface-2) !important;
+    border-color: var(--nx-border) !important;
+    color: var(--nx-text) !important;
+}
+.btn-danger {
+    background: var(--nx-red) !important;
+    border-color: var(--nx-red) !important;
+    color: #fff !important;
+}
+.btn-danger:hover {
+    background: #a31616 !important;
+    border-color: #a31616 !important;
+}
+.btn-success {
+    background: var(--nx-green) !important;
+    border-color: var(--nx-green) !important;
+    color: #fff !important;
+}
+.btn-warning {
+    background: var(--nx-orange) !important;
+    border-color: var(--nx-orange) !important;
+    color: #fff !important;
+}
+.btn-info {
+    background: var(--nx-blue) !important;
+    border-color: var(--nx-blue) !important;
+    color: #fff !important;
+}
+.btn:disabled,
+.btn.disabled {
+    opacity: 0.55;
+}
+.btn-group > .btn {
+    border-radius: 0 !important;
+}
+.btn-group > .btn:first-child:not(:last-child) {
+    border-radius: var(--nx-radius-sm) 0 0 var(--nx-radius-sm) !important;
+}
+.btn-group > .btn:last-child:not(:first-child) {
+    border-radius: 0 var(--nx-radius-sm) var(--nx-radius-sm) 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. Inputs & controls
+   -------------------------------------------------------------------------- */
+.form-control,
+.input-with-feedback,
+.input-group .form-control,
+.control-value .input-with-feedback,
+select.form-control,
+textarea.form-control {
+    border-radius: var(--nx-radius-sm) !important;
+    border-color: var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    color: var(--nx-text) !important;
+    font-size: 13px !important;
+    font-family: var(--nx-font) !important;
+    padding: 6px 10px !important;
+    min-height: 32px;
+    box-shadow: none !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.form-control:focus,
+.input-with-feedback:focus,
+.control-value .input-with-feedback:focus {
+    border-color: var(--nx-accent) !important;
+    box-shadow: var(--nx-accent-ring) !important;
+    outline: none;
+}
+.form-control::placeholder {
+    color: var(--nx-text-3);
+}
+.input-group {
+    border-radius: var(--nx-radius-sm);
+    border: 1px solid var(--nx-border);
+    background: var(--nx-surface);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-group:focus-within {
+    border-color: var(--nx-accent) !important;
+    box-shadow: var(--nx-accent-ring) !important;
+}
+.input-group .form-control {
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.input-group .input-group-text,
+.input-group .input-group-btn .btn {
+    background: var(--nx-surface-2) !important;
+    border: 0 !important;
+    color: var(--nx-text-2);
+}
+select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b93a7' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 26px !important;
+}
+[dir="rtl"] select.form-control {
+    background-position: left 10px center;
+    padding-right: 10px !important;
+    padding-left: 26px !important;
+}
+.input-with-feedback .help {
+    color: var(--nx-text-3);
+    font-size: 11.5px;
+    margin-top: 4px;
+}
+
+/* checkboxes / radios / switches */
+.custom-checkbox .custom-control-label::before,
+.custom-checkbox label::before,
+.checkbox input,
+input[type="checkbox"] {
+    border-radius: 5px !important;
+    border-color: var(--nx-border) !important;
+    accent-color: var(--nx-accent);
+}
+.custom-checkbox .custom-control-input:checked ~ .custom-control-label::before,
+.checkbox input:checked {
+    background: var(--nx-accent) !important;
+    border-color: var(--nx-accent) !important;
+}
+.custom-switch .custom-control-label::before,
+.switch-control {
+    background: var(--nx-surface-2) !important;
+    border-color: var(--nx-border) !important;
+}
+.custom-switch .custom-control-input:checked ~ .custom-control-label::before {
+    background: var(--nx-accent) !important;
+    border-color: var(--nx-accent) !important;
+}
+.custom-switch .custom-control-input:checked ~ .custom-control-label::after {
+    background-color: #fff !important;
+}
+
+/* awesomplete (ERPNext combobox / link fields) */
+.awesomplete > input {
+    border-radius: var(--nx-radius-sm) !important;
+    border-color: var(--nx-border) !important;
+}
+.awesomplete > ul {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    background: var(--nx-surface) !important;
+    padding: 5px !important;
+    margin-top: 4px !important;
+}
+.awesomplete > ul > li {
+    border-radius: 7px !important;
+    font-size: 12.5px !important;
+    padding: 7px 10px !important;
+    color: var(--nx-text) !important;
+}
+.awesomplete > ul > li:hover,
+.awesomplete > ul > li[aria-selected="true"] {
+    background: var(--nx-surface-2) !important;
+}
+.awesomplete mark {
+    background: var(--nx-accent-soft) !important;
+    color: var(--nx-accent-strong) !important;
+}
+
+/* date / time picker popup */
+.datepicker,
+.ui-datepicker,
+.bootstrap-datetimepicker-widget {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    padding: 8px !important;
+    background: var(--nx-surface) !important;
+}
+.datepicker .day.active,
+.datepicker .day.today,
+.datepicker .day.selected,
+.ui-datepicker td a.ui-state-active {
+    background: var(--nx-accent) !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+}
+.datepicker .day:hover,
+.ui-datepicker td a:hover {
+    background: var(--nx-surface-2) !important;
+    border-radius: 8px !important;
+}
+.datepicker .prev,
+.datepicker .next,
+.datepicker .datepicker-switch {
+    border-radius: 7px !important;
+    color: var(--nx-text-2) !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. List view (Sales / Purchasing / Inventory / CRM …)
+   -------------------------------------------------------------------------- */
+.layout-main-section-wrapper .listview-container,
+.listview-container {
+    padding: 0 22px 28px !important;
+}
+.listview-container .level {
+    flex-wrap: wrap;
+}
+.listview-container .list-header {
+    position: sticky;
+    top: 62px;
+    z-index: 30;
+    background: color-mix(in srgb, var(--nx-bg) 92%, transparent) !important;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--nx-border) !important;
+    padding: 8px 8px !important;
+    border-radius: 0 !important;
+}
+.listview-container .list-header .list-row {
+    border: 0 !important;
+    padding: 2px 6px !important;
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 750 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--nx-text-3) !important;
+}
+.listview-container .list-row {
+    border: 0 !important;
+    border-bottom: 1px solid var(--nx-border) !important;
+    border-radius: 0 !important;
+    padding: 11px 8px !important;
+    margin: 0 !important;
+    background: var(--nx-surface) !important;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.listview-container .list-row:nth-child(even) {
+    background: #fbfcfe !important;
+}
+.listview-container .list-row:hover {
+    background: #f3f5fc !important;
+}
+.listview-container .list-row--active {
+    background: var(--nx-accent-soft) !important;
+}
+.listview-container .list-row .level-left .level-item span,
+.listview-container .list-row .level-item {
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    color: var(--nx-text) !important;
+}
+.listview-container .list-row .level-item .ellipsis {
+    color: var(--nx-text-2);
+    font-weight: 500;
+}
+.listview-container .list-row .list-row--indicator {
+    font-size: 12px !important;
+}
+.listview-container .list-row .tag-list .tags-container,
+.listview-container .list-row .tags {
+    font-size: 11px !important;
+}
+.listview-container .list-row .list-row-like {
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+.listview-container .list-row:hover .list-row-like {
+    opacity: 1;
+}
+.listview-container .list-row .level-right .level-item .indicator-pill,
+.listview-container .list-row .indicator-pill {
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    padding: 3px 9px !important;
+    border: 0 !important;
+    background: var(--nx-gray-bg) !important;
+    color: var(--nx-text-2) !important;
+}
+
+/* list filter bar (filters / sort / group) */
+.listview-container .standard-filter-section,
+.listview-container .filter-section,
+.listview-container .list-header .level-left {
+    gap: 8px;
+}
+.listview-container .list-header .form-inline,
+.listview-container .list-header .input-with-feedback {
+    min-width: 180px;
+}
+.listview-container .list-header .sort-select,
+.listview-container .list-header .list-filter-button,
+.listview-container .list-header .btn-secondary {
+    border-radius: var(--nx-radius-sm) !important;
+}
+
+/* list footer / pagination — compact bottom toolbar */
+.listview-container .list-footer,
+.list-paging-area {
+    padding: 12px 8px !important;
+    border-top: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    border-radius: 0 0 var(--nx-radius) var(--nx-radius) !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.list-paging-area .list-stats {
+    font-size: 12px !important;
+    color: var(--nx-text-3) !important;
+    font-weight: 500;
+}
+.page-pagination,
+.pagination {
+    margin: 0 !important;
+    gap: 4px;
+}
+.page-pagination li a,
+.pagination li a,
+.pagination .page-link {
+    border-radius: var(--nx-radius-sm) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    color: var(--nx-text-2) !important;
+    font-size: 12px !important;
+    font-weight: 650 !important;
+    min-width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px !important;
+    transition: all 0.12s ease;
+}
+.page-pagination li a:hover,
+.pagination .page-link:hover {
+    background: var(--nx-surface-2) !important;
+    color: var(--nx-text) !important;
+}
+.page-pagination li.active a,
+.pagination li.active a,
+.pagination .page-item.active .page-link {
+    background: var(--nx-accent) !important;
+    border-color: var(--nx-accent) !important;
+    color: #fff !important;
+}
+
+/* bulk selection toolbar */
+.listview-container .list-bulk-actions,
+.listview-container .bulk-actions {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    box-shadow: var(--nx-shadow) !important;
+}
+
+/* list checkbox column */
+.listview-container .list-row .list-row--check,
+.listview-container .list-header .list-row--check {
+    padding-left: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   7. Form view (Settings, Company, Stock …)
+   -------------------------------------------------------------------------- */
+.form-layout {
+    max-width: 100% !important;
+    padding: 6px 22px 28px !important;
+}
+.form-layout .form-page {
+    max-width: 100% !important;
+}
+.form-column {
+    padding: 0 8px;
+}
+.form-section {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    box-shadow: var(--nx-shadow) !important;
+    margin-bottom: 14px !important;
+    overflow: hidden;
+}
+.form-section .section-head {
+    background: var(--nx-surface) !important;
+    border-bottom: 1px solid var(--nx-border) !important;
+    padding: 10px 14px !important;
+    border-radius: 0 !important;
+    cursor: pointer;
+}
+.form-section .section-head .section-title {
+    font-size: 13px !important;
+    font-weight: 750 !important;
+    color: var(--nx-text) !important;
+    letter-spacing: -0.1px;
+}
+.form-section .section-body {
+    padding: 14px !important;
+}
+.form-section .section-body .form-group {
+    margin-bottom: 14px;
+}
+.form-group .control-label {
+    font-size: 12px !important;
+    font-weight: 650 !important;
+    color: var(--nx-text-2) !important;
+    margin-bottom: 5px !important;
+    letter-spacing: -0.1px;
+}
+.form-group .control-label .text-muted {
+    color: var(--nx-text-3);
+}
+.form-group .control-value {
+    font-size: 13px !important;
+    color: var(--nx-text) !important;
+}
+.form-message {
+    border-radius: var(--nx-radius-sm) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface-2) !important;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    color: var(--nx-text-2) !important;
+}
+.help,
+.control-help {
+    color: var(--nx-text-3) !important;
+    font-size: 11.5px !important;
+}
+.form-dashboard-section {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow) !important;
+    background: var(--nx-surface);
+}
+
+/* child tables / grids */
+.form-grid {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    overflow: hidden;
+    background: var(--nx-surface) !important;
+}
+.grid {
+    border: 0 !important;
+}
+.grid-heading-row {
+    background: var(--nx-surface-2) !important;
+    border-bottom: 1px solid var(--nx-border) !important;
+}
+.grid-heading-row .cell-header {
+    font-size: 11px !important;
+    font-weight: 750 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--nx-text-3) !important;
+}
+.grid-row {
+    border-bottom: 1px solid var(--nx-border) !important;
+    transition: background 0.12s ease;
+}
+.grid-row:nth-child(even) {
+    background: #fbfcfe !important;
+}
+.grid-row:hover {
+    background: #f3f5fc !important;
+}
+.grid-row .cell-content {
+    font-size: 12.5px !important;
+    color: var(--nx-text) !important;
+}
+.grid-footer {
+    background: var(--nx-surface) !important;
+    border-top: 1px solid var(--nx-border) !important;
+    padding: 8px 12px !important;
+}
+
+/* form action bar (bottom) */
+.form-actions,
+.page-actions .form-actions,
+.form-group .form-actions {
+    gap: 8px;
+}
+.form-actions .btn {
+    margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   8. Premium tables (datatables & report wrappers)
+   -------------------------------------------------------------------------- */
+.dt-container,
+.report-wrapper {
+    max-width: 100% !important;
+    padding: 0 22px 28px !important;
+}
+.dt-scrollable {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    background: var(--nx-surface) !important;
+    box-shadow: var(--nx-shadow) !important;
+    overflow: auto;
+}
+.dt-row {
+    border-bottom: 1px solid var(--nx-border) !important;
+    transition: background 0.12s ease;
+}
+.dt-row:nth-child(even) .dt-cell {
+    background: #fbfcfe !important;
+}
+.dt-row:hover .dt-cell {
+    background: #f3f5fc !important;
+}
+.dt-cell {
+    border: 0 !important;
+    padding: 9px 12px !important;
+}
+.dt-cell__content {
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+    color: var(--nx-text) !important;
+}
+.dt-row--highlight .dt-cell,
+.dt-row--highlight .dt-cell__content {
+    background: var(--nx-accent-soft) !important;
+}
+.dt-cell--header {
+    background: var(--nx-surface-2) !important;
+    border-bottom: 1px solid var(--nx-border) !important;
+    padding: 8px 12px !important;
+}
+.dt-cell--header .dt-cell__content {
+    font-size: 11px !important;
+    font-weight: 750 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--nx-text-3) !important;
+}
+.dt-header .dt-row {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+.dt-checkbox {
+    border-radius: 5px !important;
+    accent-color: var(--nx-accent);
+}
+.dt-container .form-control,
+.dt-container .input-sm {
+    border-radius: var(--nx-radius-sm) !important;
+}
+
+/* tree / report trees */
+.tree {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    background: var(--nx-surface) !important;
+    padding: 8px !important;
+}
+.tree .tree-node .tree-label {
+    border-radius: var(--nx-radius-sm) !important;
+    font-size: 13px !important;
+}
+.tree .tree-node .tree-label:hover,
+.tree .tree-node.selected .tree-label {
+    background: var(--nx-accent-soft) !important;
+    color: var(--nx-text) !important;
+}
+
+/* --------------------------------------------------------------------------
+   9. Cards, widgets & panels
+   -------------------------------------------------------------------------- */
+.frappe-card,
+.widget,
+.module-card,
+.number-card,
+.dashboard-card,
+.quick-entry,
+.form-dashboard-section,
+.indicator-column {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    box-shadow: var(--nx-shadow) !important;
+}
+.frappe-card .frappe-card-title,
+.frappe-card .card-head,
+.widget .widget-head,
+.widget-header,
+.number-card .number-card-body .number {
+    font-size: 13px !important;
+    font-weight: 750 !important;
+    color: var(--nx-text) !important;
+}
+.widget .widget-head .widget-title,
+.widget .widget-head .widget-title i,
+.module-card .module-card-head .app-logo,
+.module-card .module-card-head .app-title {
+    font-size: 13px !important;
+    font-weight: 750 !important;
+}
+.frappe-card .frappe-card-body {
+    font-size: 12.5px !important;
+    color: var(--nx-text-2);
+}
+.widget {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow) !important;
+    background: var(--nx-surface) !important;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.widget:hover {
+    box-shadow: var(--nx-shadow-hover) !important;
+    transform: translateY(-1px);
+}
+.widget .widget-body .widget-content {
+    padding: 12px !important;
+}
+.kanban-board .kanban-header,
+.kanban-board .kanban-column {
+    background: var(--nx-surface) !important;
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow) !important;
+}
+
+/* --------------------------------------------------------------------------
+   10. Modals, dialogs, dropdowns, popovers, tooltips
+   -------------------------------------------------------------------------- */
+.modal-backdrop {
+    background: rgba(17, 24, 39, 0.45) !important;
+    opacity: 1 !important;
+    backdrop-filter: blur(3px);
+}
+.modal .modal-dialog {
+    border-radius: var(--nx-radius) !important;
+}
+.modal .modal-content {
+    border-radius: var(--nx-radius) !important;
+    border: 0 !important;
+    box-shadow: var(--modal-shadow) !important;
+    background: var(--nx-surface) !important;
+}
+.modal .modal-header {
+    border-bottom: 1px solid var(--nx-border) !important;
+    padding: 14px 18px !important;
+    background: var(--nx-surface) !important;
+}
+.modal .modal-title {
+    font-size: 15px !important;
+    font-weight: 750 !important;
+    color: var(--nx-text) !important;
+    letter-spacing: -0.2px;
+}
+.modal .modal-header .close {
+    border-radius: var(--nx-radius-sm) !important;
+    color: var(--nx-text-2) !important;
+    opacity: 0.8;
+}
+.modal .modal-header .close:hover {
+    background: var(--nx-surface-2) !important;
+    opacity: 1;
+}
+.modal .modal-body {
+    padding: 16px 18px !important;
+    background: var(--nx-surface) !important;
+}
+.modal .modal-footer {
+    border-top: 1px solid var(--nx-border) !important;
+    padding: 12px 18px !important;
+    background: var(--nx-surface) !important;
+}
+.form-dialog .modal-body {
+    background: var(--nx-surface) !important;
+}
+
+.dropdown-menu {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    background: var(--nx-surface) !important;
+    padding: 6px !important;
+    font-size: 12.5px !important;
+}
+.dropdown-menu li a,
+.dropdown-menu .dropdown-item {
+    border-radius: 7px !important;
+    padding: 7px 10px !important;
+    font-size: 12.5px !important;
+    color: var(--nx-text) !important;
+    transition: background 0.12s ease;
+}
+.dropdown-menu li a:hover,
+.dropdown-menu .dropdown-item:hover {
+    background: var(--nx-surface-2) !important;
+    color: var(--nx-text) !important;
+}
+.dropdown-menu .dropdown-divider {
+    border-top: 1px solid var(--nx-border) !important;
+}
+.popover {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    background: var(--nx-surface) !important;
+}
+.popover .popover-body {
+    font-size: 12.5px !important;
+    color: var(--nx-text) !important;
+}
+.tooltip .tooltip-inner {
+    border-radius: var(--nx-radius-sm) !important;
+    background: var(--nx-text) !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    padding: 5px 10px !important;
+}
+
+/* --------------------------------------------------------------------------
+   11. Empty states — Nexora branded
+   -------------------------------------------------------------------------- */
+.msg-box,
+.empty-state,
+.listview-empty-state,
+.empty-statement {
+    border: 1px dashed var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    background: var(--nx-surface) !important;
+    padding: 48px 28px !important;
+    margin: 18px 22px !important;
+    text-align: center;
+}
+.msg-box .msg-box-title,
+.msg-box .title,
+.empty-state .empty-state-title,
+.empty-statement .title {
+    font-size: 15px !important;
+    font-weight: 750 !important;
+    color: var(--nx-text) !important;
+    letter-spacing: -0.2px;
+    margin-bottom: 6px !important;
+}
+.msg-box .msg,
+.msg-box .msg-box-description,
+.empty-state .empty-state-description,
+.empty-statement .msg {
+    font-size: 12.5px !important;
+    color: var(--nx-text-2) !important;
+    line-height: 1.55;
+    margin-bottom: 16px !important;
+}
+.msg-box .btn,
+.empty-state .btn {
+    margin-top: 4px;
+}
+.listview-container .msg-box {
+    margin: 18px 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+   12. Loading states — Nexora skeleton
+   -------------------------------------------------------------------------- */
+#freeze {
+    background: rgba(246, 247, 251, 0.72) !important;
+    backdrop-filter: blur(4px);
+}
+#freeze .freeze-message-container .freeze-message {
+    border-radius: var(--nx-radius) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    padding: 14px 22px !important;
+}
+.freeze-message .spinner {
+    color: var(--nx-accent) !important;
+}
+.spinner,
+.spinner-border {
+    color: var(--nx-accent) !important;
+}
+.spinner-border {
+    border-right-color: transparent !important;
+    border-top-color: var(--nx-accent) !important;
+    border-bottom-color: var(--nx-accent) !important;
+    border-left-color: var(--nx-accent) !important;
+}
+.skeleton,
+.skeleton::before,
+.skeleton-text,
+.skeleton-block,
+.frappe-control .skeleton {
+    background: linear-gradient(90deg, var(--nx-surface-2) 25%, #f3f4fb 50%, var(--nx-surface-2) 75%) !important;
+    background-size: 400% 100% !important;
+    animation: nx-skeleton-shimmer 1.2s ease-in-out infinite !important;
+    border-radius: var(--nx-radius-sm) !important;
+}
+@keyframes nx-skeleton-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+.frappe-progress .progress-bar {
+    background: var(--nx-accent) !important;
+    border-radius: 999px !important;
+}
+.frappe-progress .progress {
+    background: var(--nx-surface-2) !important;
+    border-radius: 999px !important;
+}
+
+/* --------------------------------------------------------------------------
+   13. Alerts, toasts & notifications
+   -------------------------------------------------------------------------- */
+.alert {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    background: var(--nx-surface) !important;
+    color: var(--nx-text) !important;
+    font-size: 12.5px !important;
+    box-shadow: var(--nx-shadow) !important;
+}
+.alert.alert-primary {
+    background: var(--nx-blue-bg) !important;
+    border-color: var(--nx-border) !important;
+    color: var(--nx-blue) !important;
+}
+.alert.alert-success {
+    background: var(--nx-green-bg) !important;
+    border-color: var(--nx-green-border) !important;
+    color: var(--nx-green) !important;
+}
+.alert.alert-danger {
+    background: var(--nx-red-bg) !important;
+    border-color: #fecaca !important;
+    color: var(--nx-red) !important;
+}
+.alert.alert-warning {
+    background: var(--nx-yellow-bg) !important;
+    border-color: #fde68a !important;
+    color: var(--nx-yellow) !important;
+}
+.toast,
+.notification-list .list-row {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    background: var(--nx-surface) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+}
+.indicator,
+.indicator-pill {
+    color: var(--nx-text-2) !important;
+}
+
+/* --------------------------------------------------------------------------
+   14. Tabs & sections
+   -------------------------------------------------------------------------- */
+.nav-tabs {
+    border-bottom: 1px solid var(--nx-border) !important;
+    padding: 0 22px !important;
+}
+.nav-tabs .nav-link {
+    font-size: 12.5px !important;
+    font-weight: 650 !important;
+    color: var(--nx-text-2) !important;
+    border: 0 !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    padding: 10px 14px !important;
+    margin-bottom: -1px;
+    transition: color 0.12s ease, border-color 0.12s ease;
+}
+.nav-tabs .nav-link:hover {
+    color: var(--nx-text) !important;
+}
+.nav-tabs .nav-link.active {
+    color: var(--nx-accent) !important;
+    border-bottom-color: var(--nx-accent) !important;
+    background: transparent !important;
+}
+
+/* --------------------------------------------------------------------------
+   15. Badges, indicators & avatars
+   -------------------------------------------------------------------------- */
+.badge,
+.tag,
+.label-pill {
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    padding: 3px 9px !important;
+    border: 0 !important;
+}
+.avatar {
+    border-radius: 9px !important;
+    background: var(--nx-accent-soft) !important;
+}
+.avatar-frame {
+    border-radius: 9px !important;
+    font-weight: 700 !important;
+    color: var(--nx-accent-strong) !important;
+}
+.avatar-small {
+    width: 24px !important;
+    height: 24px !important;
+}
+.avatar-medium {
+    width: 32px !important;
+    height: 32px !important;
+}
+.indicator-pill.green {
+    background: var(--nx-green-bg) !important;
+    color: var(--nx-green) !important;
+}
+.indicator-pill.red {
+    background: var(--nx-red-bg) !important;
+    color: var(--nx-red) !important;
+}
+.indicator-pill.orange {
+    background: var(--nx-orange-bg) !important;
+    color: var(--nx-orange) !important;
+}
+.indicator-pill.blue {
+    background: var(--nx-blue-bg) !important;
+    color: var(--nx-blue) !important;
+}
+.indicator-pill.purple {
+    background: var(--nx-purple-bg) !important;
+    color: var(--nx-purple) !important;
+}
+.indicator-pill.teal {
+    background: var(--nx-teal-bg) !important;
+    color: var(--nx-teal) !important;
+}
+.indicator-pill.yellow {
+    background: var(--nx-yellow-bg) !important;
+    color: var(--nx-yellow) !important;
+}
+
+/* --------------------------------------------------------------------------
+   16. Scrollbars, focus & misc
+   -------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: var(--scrollbar-track-color);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb-color);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #aab1c4;
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-color) transparent;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--nx-accent);
+    outline-offset: 1px;
+}
+
+/* RTL alignment guards */
+[dir="rtl"] .listview-container .list-header .list-row--check,
+[dir="rtl"] .listview-container .list-row .list-row--check {
+    padding-left: 0;
+    padding-right: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   17. Configuration Center — Content Design System
+   --------------------------------------------------------------------------
+   Every embedded configuration screen (Pricing, Exchange, Shipments,
+   Settings) renders through ERPNext's list/form engine. These rules rebuild
+   that engine's output into the native Nexora look: professional command
+   bar, premium list/table, redesigned checkboxes, Nexora pagination,
+   search + filters, selection states, empty + loading states.
+   No ERPNext identity remains inside the content area.
+   -------------------------------------------------------------------------- */
+
+/* --- list command bar (search / filters / sort / actions) --- */
+.listview-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+.listview-container .list-toolbar,
+.listview-container .standard-filter-section,
+.listview-container .filter-section {
+    background: transparent !important;
+    border: 0 !important;
+    padding: 8px 12px !important;
+    margin: 0 !important;
+}
+.listview-container .list-toolbar .level,
+.listview-container .standard-filter-section .level,
+.listview-container .filter-section .level,
+.listview-container .list-toolbar .level-left,
+.listview-container .list-toolbar .level-right,
+.listview-container .standard-filter-section .level-left,
+.listview-container .standard-filter-section .level-right,
+.listview-container .filter-section .level-left,
+.listview-container .filter-section .level-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.listview-container .list-toolbar .input-with-feedback,
+.listview-container .list-toolbar .input-group,
+.listview-container .standard-filter-section .input-with-feedback {
+    width: auto;
+    min-width: 200px;
+}
+.listview-container .list-toolbar .btn,
+.listview-container .list-toolbar select,
+.listview-container .standard-filter-section select,
+.listview-container .filter-section select,
+.listview-container .list-toolbar .sort-select {
+    height: 32px;
+    border-radius: var(--nx-radius-sm) !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+}
+
+/* --- premium list rows --- */
+.listview-container .list-row {
+    padding: 12px 10px !important;
+}
+.listview-container .list-row .level-left .level-item:first-child span,
+.listview-container .list-row .list-row--title {
+    font-size: 13px !important;
+    font-weight: 650 !important;
+    color: var(--nx-text) !important;
+}
+.listview-container .list-row .level-right .level-item {
+    font-size: 12px !important;
+    color: var(--nx-text-2) !important;
+}
+.listview-container .list-row .level-right {
+    gap: 10px;
+}
+.listview-container .list-row .list-row--indicator .indicator-pill,
+.listview-container .list-row .indicator-pill {
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    padding: 3px 10px !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+/* --- remove ERPNext row identity icons (like / comment / duplicate) --- */
+.listview-container .list-row .list-row-like,
+.listview-container .list-row .like-action,
+.listview-container .list-row .like-icon,
+.listview-container .list-row .list-row-comment,
+.listview-container .list-row .comment-icon,
+.listview-container .list-row .comment-count,
+.listview-container .list-row .level-right .icon-btn,
+.listview-container .list-row .list-row--indicator .icon {
+    display: none !important;
+}
+
+/* --- Nexora checkboxes (list rows, header, grids, forms) --- */
+.listview-container .list-row--check input,
+.listview-container .list-header .list-row--check input,
+.form-grid .grid-row .grid-row-check input,
+.grid-row-check input[type="checkbox"],
+.form-check input[type="checkbox"],
+input[type="checkbox"].checkbox {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
+    min-height: 16px !important;
+    margin: 0 !important;
+    border: 1.5px solid var(--nx-border) !important;
+    border-radius: 5px !important;
+    background: var(--nx-surface) !important;
+    cursor: pointer !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+    box-shadow: none !important;
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.listview-container .list-row--check input:hover,
+.listview-container .list-header .list-row--check input:hover,
+.form-grid .grid-row-check input:hover,
+input[type="checkbox"].checkbox:hover {
+    border-color: var(--nx-accent) !important;
+}
+.listview-container .list-row--check input:checked,
+.listview-container .list-header .list-row--check input:checked,
+.form-grid .grid-row-check input:checked,
+input[type="checkbox"].checkbox:checked {
+    background: var(--nx-accent) !important;
+    border-color: var(--nx-accent) !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='8' viewBox='0 0 10 8'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 10px 8px;
+}
+.listview-container .list-row--check input:focus-visible,
+input[type="checkbox"].checkbox:focus-visible {
+    outline: 2px solid var(--nx-accent);
+    outline-offset: 1px;
+}
+/* neutralise ERPNext checkbox pseudo-chrome */
+.list-row--check .checkbox::before,
+.list-row--check .checkbox::after,
+.checkbox::before,
+.checkbox::after,
+.form-check .checkbox::before,
+.form-check .checkbox::after {
+    content: none !important;
+    display: none !important;
+    border: 0 !important;
+    background: none !important;
+}
+
+/* --- premium tables (datatables / report wrappers) --- */
+.dt-scrollable {
+    border-radius: var(--nx-radius) !important;
+    box-shadow: var(--nx-shadow) !important;
+}
+.dt-cell--header {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+}
+.dt-row:hover .dt-cell,
+.dt-row--highlight .dt-cell {
+    background: var(--nx-accent-soft) !important;
+}
+.dt-cell__content {
+    font-size: 12.5px !important;
+    line-height: 1.5;
+}
+
+/* --- configuration form panels --- */
+.form-section .section-head {
+    padding: 12px 16px !important;
+}
+.form-section .section-head .section-title {
+    font-size: 13.5px !important;
+}
+.form-section .section-body .form-grid {
+    border-radius: var(--nx-radius-sm) !important;
+}
+.grid-row-check {
+    padding: 0 !important;
+}
+
+/* --- pagination: Nexora pills --- */
+.list-paging-area {
+    padding: 12px 14px !important;
+}
+.list-paging-area .page-pagination li a {
+    min-width: 30px;
+    height: 30px;
+}
+.list-paging-area .list-stats,
+.list-paging-area .list-more {
+    font-size: 12px !important;
+    color: var(--nx-text-3) !important;
+}
+
+/* --- empty + loading: Nexora branded --- */
+.listview-container .list-empty,
+.listview-container .listview-empty-state,
+.listview-container .msg-box {
+    border: 1px dashed var(--nx-border) !important;
+    border-radius: var(--nx-radius) !important;
+    background: var(--nx-surface) !important;
+    padding: 48px 28px !important;
+    margin: 18px 22px !important;
+}
+.listview-container .msg-box .title,
+.listview-container .list-empty .title {
+    font-size: 15px !important;
+    font-weight: 750 !important;
+}
+.listview-container .msg-box .msg,
+.listview-container .list-empty .msg {
+    font-size: 12.5px !important;
+    color: var(--nx-text-2) !important;
+}
+
+/* --- selection states --- */
+.listview-container .list-row.selected,
+.listview-container .list-row--active {
+    background: var(--nx-accent-soft) !important;
+    box-shadow: inset 3px 0 0 var(--nx-accent) !important;
+}
+
+/* --- bulk actions bar --- */
+.listview-container .list-bulk-actions,
+.listview-container .bulk-actions {
+    border-radius: var(--nx-radius) !important;
+    border: 1px solid var(--nx-border) !important;
+    box-shadow: var(--nx-shadow-hover) !important;
+    padding: 6px !important;
+    background: var(--nx-surface) !important;
+}
+.listview-container .list-bulk-actions .btn,
+.listview-container .bulk-actions .btn {
+    border-radius: var(--nx-radius-sm) !important;
+}
+
+/* print isolation */
+@media print {
+    body {
+        background: #fff !important;
+    }
+    .page-head {
+        position: static !important;
+        backdrop-filter: none !important;
+    }
+    .listview-container .list-header {
+        position: static !important;
+    }
+    .btn,
+    .dropdown-menu,
+    .modal-backdrop {
+        display: none !important;
+    }
+    @page {
+        margin: 12mm;
+    }
+}
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

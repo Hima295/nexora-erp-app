@@ -1,0 +1,14 @@
+/* Nexora Developer Center RTL Styles */
+.nexora-dev-progress {
+    margin-top: 15px;
+}
+
+.nexora-dev-logs {
+    margin-top: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+}

@@ -223,7 +223,7 @@ window.NexoraDashboard.DataTable = (function () {
     function rowHtml(S, it) {
         var cols = visibleCols(S);
         var sel = S.selected.has(it.i);
-        var h = '<tr class="nx-dt-row' + (sel ? " nx-dt-selected" : "") + '" data-row="' + it.i + '">';
+        var h = '<tr class="nx-dt-row' + (it.i % 2 === 1 ? " nx-dt-even" : "") + (sel ? " nx-dt-selected" : "") + '" data-row="' + it.i + '">';
         h += '<td class="nx-dt-cell nx-dt-sel">' + selSpan(S, it.i, sel) + "</td>";
         for (var k = 0; k < cols.length; k++) {
             var c = cols[k];
@@ -632,9 +632,25 @@ window.NexoraDashboard.DataTable = (function () {
             if (pc <= 1) pageEl.hidden = true;
             else {
                 pageEl.hidden = false;
-                pageEl.textContent = S.nx.num(S.page + 1, 0) + " / " + S.nx.num(pc, 0);
+                pageEl.innerHTML = pagerHtml(S, S.page + 1, pc);
             }
         }
+    }
+
+    function pagerHtml(S, cur, pc) {
+        var html = '<span class="nx-dt-page-label">' + S.nx.num(cur, 0) + " / " + S.nx.num(pc, 0) + "</span>";
+        var nums = [];
+        var lo = Math.max(1, cur - 2), hi = Math.min(pc, lo + 4);
+        lo = Math.max(1, hi - 4);
+        if (lo > 1) { nums.push(1); if (lo > 2) nums.push("…"); }
+        for (var i = lo; i <= hi; i++) nums.push(i);
+        if (hi < pc) { if (hi < pc - 1) nums.push("…"); nums.push(pc); }
+        for (var k = 0; k < nums.length; k++) {
+            var n = nums[k];
+            if (n === "…") html += '<span class="nx-dt-page-ell">…</span>';
+            else html += '<button type="button" class="nx-dt-page-num' + (n === cur ? " is-on" : "") + '" data-dt-goto="' + n + '">' + n + "</button>";
+        }
+        return html;
     }
 
     function refreshPopState(S) {
@@ -1019,6 +1035,12 @@ window.NexoraDashboard.DataTable = (function () {
             var res = S.res || compute(S);
             var pc = pageCount(S, res.groups, res.total);
             if (S.page < pc - 1) { S.page++; renderTable(S); }
+        });
+        frame.querySelector("[data-dt-page]").addEventListener("click", function (e) {
+            var b = e.target.closest("[data-dt-goto]");
+            if (!b) return;
+            var page = +b.getAttribute("data-dt-goto") - 1;
+            if (page !== S.page) { S.page = page; renderTable(S); }
         });
         frame.querySelector("[data-dt-pagesize]").addEventListener("change", function (e) {
             var v = e.target.value;

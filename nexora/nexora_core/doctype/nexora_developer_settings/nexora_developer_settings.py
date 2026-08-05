@@ -3,5 +3,5 @@ import frappe
 from frappe.model.document import Document
 
 
-class nexoraSettings(Document):
+class NexoraDeveloperSettings(Document):
     pass

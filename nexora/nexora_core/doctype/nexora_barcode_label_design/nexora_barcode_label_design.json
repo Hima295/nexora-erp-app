@@ -1,0 +1,103 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 14:50:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_info",
+    "label_name",
+    "label_size",
+    "orientation",
+    "column_break_1",
+    "company",
+    "visibility",
+    "is_default",
+    "section_editor",
+    "editor_json"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_info",
+      "fieldtype": "Section Break",
+      "label": "Label Information"
+    },
+    {
+      "fieldname": "label_name",
+      "fieldtype": "Data",
+      "label": "Label Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "label_size",
+      "fieldtype": "Select",
+      "label": "Label Size",
+      "options": "40x20\n50x30\n60x40\n70x50\n80x50\n100x50\nCustom",
+      "default": "40x20",
+      "reqd": 1
+    },
+    {
+      "fieldname": "orientation",
+      "fieldtype": "Select",
+      "label": "Orientation",
+      "options": "Portrait\nLandscape",
+      "default": "Portrait"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "visibility",
+      "fieldtype": "Select",
+      "label": "Visibility",
+      "options": "Global\nCompany",
+      "default": "Global"
+    },
+    {
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "label": "Set as Default"
+    },
+    {
+      "fieldname": "section_editor",
+      "fieldtype": "Section Break",
+      "label": "Label Designer"
+    },
+    {
+      "fieldname": "editor_json",
+      "fieldtype": "Code",
+      "label": "Design JSON",
+      "options": "JSON"
+    }
+  ],
+  "issingle": 0,
+  "links": [],
+  "modified": "2026-07-26 14:50:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Nexora Barcode Label Design",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

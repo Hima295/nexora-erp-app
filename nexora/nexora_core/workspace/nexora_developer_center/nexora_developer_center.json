@@ -1,0 +1,34 @@
+{
+  "charts": [],
+  "content": "[{\"id\": \"np-dc-h-1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Developer Center</b></span>\", \"col\": 12}}, {\"id\": \"np-dc-sc-1\", \"type\": \"shortcut\", \"data\": {\"card_name\": \"Publish Update\", \"label\": \"Publish Update\", \"type\": \"DocType\", \"link_to\": \"Nexora Update History\", \"color\": \"#28A745\", \"icon\": \"fa fa-rocket\", \"doc_view\": \"List\"}}, {\"id\": \"np-dc-sc-2\", \"type\": \"shortcut\", \"data\": {\"card_name\": \"Restore Backup\", \"label\": \"Restore Backup\", \"type\": \"DocType\", \"link_to\": \"Nexora Backup\", \"color\": \"#17A2B8\", \"icon\": \"fa fa-history\", \"doc_view\": \"List\"}}, {\"id\": \"np-dc-sc-3\", \"type\": \"shortcut\", \"data\": {\"card_name\": \"Update History\", \"label\": \"Update History\", \"type\": \"DocType\", \"link_to\": \"Nexora Update History\", \"color\": \"#FFC107\", \"icon\": \"fa fa-list-alt\", \"doc_view\": \"List\"}}]",
+  "custom_blocks": [
+    {
+      "custom_block_name": "Developer Center",
+      "label": "Developer Center"
+    }
+  ],
+  "creation": "2026-07-26 11:27:00.000000",
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "code",
+  "idx": 0,
+  "is_hidden": 0,
+  "label": "Developer Center",
+  "links": [],
+  "modified": "2026-07-26 11:27:00.000000",
+  "modified_by": "Administrator",
+  "module": "nexora Core",
+  "name": "Developer Center",
+  "number_cards": [],
+  "owner": "Administrator",
+  "parent_page": "",
+  "public": 1,
+  "quick_lists": [],
+  "restrict_to_domain": "",
+  "roles": [],
+  "sequence_id": 1.0,
+  "shortcuts": [],
+  "title": "Developer Center"
+}
